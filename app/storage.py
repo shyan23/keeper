@@ -1,0 +1,21 @@
+from pathlib import Path
+
+from app.config import get_settings
+
+STORAGE_DIR = get_settings().storage_dir
+
+
+def path_for(patient_id: int, document_id: int, ext: str) -> str:
+    ext = ext.lstrip(".")
+    return str(Path(STORAGE_DIR) / str(patient_id) / f"{document_id}.{ext}")
+
+
+def save_bytes(patient_id: int, document_id: int, ext: str, data: bytes) -> str:
+    target = Path(path_for(patient_id, document_id, ext))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return str(target)
+
+
+def read_file(path: str) -> bytes:
+    return Path(path).read_bytes()
