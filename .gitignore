@@ -6,4 +6,4 @@ __pycache__/
 venv/
 .remember/
 RAG_Techniques/
-.claude/
+.claude/settings.local.json
