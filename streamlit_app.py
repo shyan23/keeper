@@ -95,32 +95,33 @@ def main() -> None:
         else:
             st.info("No documents yet.")
 
-        # ---- upload section ----
+        # ---- upload section (always visible) ----
         st.subheader("📤 Upload document")
-        if not patients:
-            st.warning("Add a patient first.")
-        else:
+        if patients:
             up_label = st.selectbox("For patient", list(label_to_id), key="upload_patient")
             up_pid = label_to_id[up_label]
-            doc_type = st.selectbox(
-                "Type", ["prescription", "lab_report", "diagnostic_report",
-                         "discharge_summary", "other"],
+        else:
+            st.caption("No patients yet — add one in the sidebar to attach this upload.")
+            up_pid = None
+        doc_type = st.selectbox(
+            "Type", ["prescription", "lab_report", "diagnostic_report",
+                     "discharge_summary", "other"],
+        )
+        uploaded = st.file_uploader("File (image or PDF)",
+                                    type=["png", "jpg", "jpeg", "pdf", "webp"])
+        if st.button("Save upload", disabled=(uploaded is None or up_pid is None)):
+            data = uploaded.getvalue()
+            # create row first to get an id, then write the file, then store path
+            doc = dsvc.create_document(
+                db, patient_id=up_pid, doc_type=doc_type,
+                source_type="pdf" if _ext(uploaded.name) == "pdf" else "image",
+                mime_type=uploaded.type,
             )
-            uploaded = st.file_uploader("File (image or PDF)",
-                                        type=["png", "jpg", "jpeg", "pdf", "webp"])
-            if st.button("Save upload", disabled=uploaded is None):
-                data = uploaded.getvalue()
-                # create row first to get an id, then write the file, then store path
-                doc = dsvc.create_document(
-                    db, patient_id=up_pid, doc_type=doc_type,
-                    source_type="pdf" if _ext(uploaded.name) == "pdf" else "image",
-                    mime_type=uploaded.type,
-                )
-                import app.storage as storage
-                path = storage.save_bytes(up_pid, doc.id, _ext(uploaded.name), data)
-                dsvc.set_file_path(db, doc.id, path)
-                st.success(f"Saved {uploaded.name} → {path} (doc #{doc.id})")
-                st.rerun()
+            import app.storage as storage
+            path = storage.save_bytes(up_pid, doc.id, _ext(uploaded.name), data)
+            dsvc.set_file_path(db, doc.id, path)
+            st.success(f"Saved {uploaded.name} → {path} (doc #{doc.id})")
+            st.rerun()
     finally:
         db.close()
 
