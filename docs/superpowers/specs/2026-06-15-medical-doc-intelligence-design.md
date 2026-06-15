@@ -16,7 +16,7 @@ grounded RAG chatbot that answers only from uploaded documents, with citations.
 | Backend | Python + FastAPI (hosted). Also serves the static frontend. |
 | Frontend | Vanilla HTML / CSS / JS. No framework. |
 | AI provider | Google Gemini API only — vision OCR, entity extraction, `text-embedding-004` embeddings, chat (`gemini-2.0-flash`). |
-| Database | PostgreSQL + pgvector. Holds structured entities AND embeddings. |
+| Database | Supabase (hosted PostgreSQL) + pgvector. Holds structured entities AND embeddings. |
 | File storage | Raw images/PDFs on local disk. DB stores only file paths + metadata. |
 | Auth | None. Single owner manages multiple patient profiles. Isolation enforced at query level. |
 | Topology | One repo, one FastAPI monolith (API + static UI). |
@@ -102,9 +102,12 @@ ingestion logic yet — just the scaffolding everything else builds on.
    `DATABASE_URL`, `GEMINI_API_KEY`, `STORAGE_DIR` (default `./data/files`),
    `APP_VERSION`.
 
-3. **Database** — Alembic migration creating all tables above, including the
-   `vector` extension (`CREATE EXTENSION IF NOT EXISTS vector`) and the
-   `chunk.embedding vector(768)` column. (768 = `text-embedding-004` dim.)
+3. **Database (Supabase)** — `DATABASE_URL` = Supabase Postgres connection
+   string (session pooler for the app). Alembic migration creates all tables
+   above, including `CREATE EXTENSION IF NOT EXISTS vector` and the
+   `chunk.embedding vector(768)` column (768 = `text-embedding-004` dim).
+   Supabase MCP tools (`apply_migration`, `list_tables`, `get_advisors`) are
+   available and may be used to apply/inspect migrations against the project.
 
 4. **File storage** (`app/storage.py`) — layout
    `STORAGE_DIR/<patient_id>/<document_id>.<ext>`. Functions: `save_upload`,
@@ -124,7 +127,8 @@ ingestion logic yet — just the scaffolding everything else builds on.
 - SQLAlchemy 2.x + Alembic for models/migrations.
 - `pgvector` Python package for the vector column type.
 - `pydantic-settings` for config.
-- `pytest` + a test Postgres (or testcontainers) for the test suite.
+- `pytest` for the test suite (test against a Supabase branch DB or local
+  throwaway Postgres).
 
 ### Out of scope (foundation)
 
