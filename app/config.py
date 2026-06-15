@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
+    groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    ollama_embed_model: str = "nomic-embed-text"
+    rag_top_k: int = 5
+    rag_confidence_threshold: float = 0.5
     gemini_api_key: str = "changeme"
     storage_dir: str = "./data/files"
     app_version: str = "0.1.0"
