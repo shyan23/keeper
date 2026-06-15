@@ -13,15 +13,15 @@ grounded RAG chatbot that answers only from uploaded documents, with citations.
 
 | Layer | Choice |
 |---|---|
-| App | Python + **Streamlit** — single app, UI + logic in one process. |
-| Hosting | **Streamlit Community Cloud** (free). |
+| App | Python **service/data layer** — testable modules, run locally. No UI yet (deferred). |
+| Hosting | Local for now. (Deployment + UI revisited later.) |
 | AI provider | Google Gemini API only — vision OCR, entity extraction, `text-embedding-004` embeddings, chat (`gemini-2.0-flash`). |
-| Database | Supabase (hosted PostgreSQL) + pgvector. Holds structured entities AND embeddings. |
-| File storage | **Supabase Storage** bucket. DB stores only a storage reference + metadata. **Only medical-image documents store their raw file for now**; prescriptions/other docs keep OCR text + metadata only (no raw file). |
+| Database | Supabase (hosted PostgreSQL) + pgvector, reached over the **IPv4 session pooler** (`aws-0-ap-southeast-1.pooler.supabase.com:5432`, user `postgres.<ref>`). Holds structured entities AND embeddings. |
+| File storage | **Local disk** under `STORAGE_DIR` (default `./data/files`), patient-scoped layout. DB stores only the file path + metadata; raw bytes never touch the DB. |
 | Auth | None. Single owner manages multiple patient profiles. Isolation enforced at query level. |
-| Architecture | Thin Streamlit view over a **testable service/data layer** (config, db, models, storage, services). Business logic lives in services and is unit-tested without Streamlit. |
+| Architecture | Plain Python **service/data layer** (config, db, models, storage, services), fully unit-tested. A UI (FastAPI or Streamlit) mounts on top in a later sub-project. |
 
-> **Note:** Streamlit Community Cloud has an ephemeral filesystem, so raw files can't persist on local disk. Supabase Storage replaces the original "local disk" rule while preserving its intent: the DB holds only references, not file bytes.
+> **Note:** the DB is Supabase but the app runs locally. Direct Supabase connections are IPv6-only; this machine has no global IPv6, so the **session pooler** (IPv4) URL is used in `DATABASE_URL`.
 
 ## Decomposition (build order)
 
@@ -43,10 +43,9 @@ Each sub-project gets its own spec → plan → build cycle.
 
 ```
 patient        (id, name, age, gender, relationship, created_at)
-document       (id, patient_id FK, doc_type, classification, storage_key,
+document       (id, patient_id FK, doc_type, classification, file_path,
                 source_type, mime_type, raw_ocr_text, status, uploaded_at)
-                -- storage_key = Supabase Storage object key; NULL for docs
-                --   whose raw file we don't keep (non-image, for now)
+                -- file_path = local disk path under STORAGE_DIR
 doctor         (id, name, specialty, contact, created_at)
 disease        (id, name, icd_code, notes, created_at)
 symptom        (id, name, created_at)
@@ -85,77 +84,63 @@ ingestion logic yet — just the scaffolding everything else builds on.
 1. **Repo layout**
    ```
    app/
-     config.py          # settings via env (DB url, Gemini key, Supabase Storage)
+     config.py          # settings via env (DB url, Gemini key, STORAGE_DIR)
      db.py              # SQLAlchemy engine, session, Base
      models.py          # SQLAlchemy models for the schema above
-     storage.py         # Supabase Storage client: upload/get-url/delete (images)
+     storage.py         # local-disk file helpers (path layout, save/read)
      services/
-       patients.py      # patient CRUD functions (used by Streamlit + tests)
+       patients.py      # patient CRUD functions (used by tests + later UI)
        health.py        # db + pgvector connectivity check
-   streamlit_app.py     # Streamlit entry: Home — patient list + create form
    migrations/          # Alembic
    tests/
    .env.example
-   .streamlit/secrets.toml.example
    requirements.txt
    README.md
    ```
 
 2. **Config** (`app/config.py`) — pydantic-settings reading:
-   `DATABASE_URL`, `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`,
-   `SUPABASE_BUCKET` (default `medical-images`), `APP_VERSION`. On Streamlit
-   Cloud these come from `st.secrets`; locally from `.env`.
+   `DATABASE_URL`, `GEMINI_API_KEY`, `STORAGE_DIR` (default `./data/files`),
+   `APP_VERSION`. Loaded from `.env` locally.
 
-3. **Database (Supabase)** — `DATABASE_URL` = Supabase Postgres connection
-   string (session pooler). Alembic migration creates all tables above,
-   including `CREATE EXTENSION IF NOT EXISTS vector` and the
+3. **Database (Supabase via pooler)** — `DATABASE_URL` = Supabase **session
+   pooler** connection string (IPv4). Alembic migration creates all tables
+   above, including `CREATE EXTENSION IF NOT EXISTS vector` and the
    `chunk.embedding vector(768)` column (768 = `text-embedding-004` dim).
    Supabase MCP tools (`apply_migration`, `list_tables`, `get_advisors`) are
    available and may be used to apply/inspect migrations.
 
-4. **File storage** (`app/storage.py`) — Supabase Storage via `supabase-py`.
-   Object key layout `<patient_id>/<document_id>.<ext>` in the
-   `SUPABASE_BUCKET` bucket. Functions: `upload_image(patient_id, document_id,
-   ext, data, content_type) -> storage_key`, `get_url(storage_key)`,
-   `delete(storage_key)`. **Only medical-image documents are uploaded for now**;
-   non-image docs store `storage_key = NULL`. Raw bytes never touch the DB.
+4. **File storage** (`app/storage.py`) — local disk, layout
+   `STORAGE_DIR/<patient_id>/<document_id>.<ext>`. Functions:
+   `save_bytes(patient_id, document_id, ext, data) -> path`,
+   `path_for(patient_id, document_id, ext)`, `read_file(path)`. Raw bytes never
+   touch the DB; the DB stores only the path.
 
-5. **Patient service** (`app/services/patients.py`) — plain functions, no
-   Streamlit/web coupling, every other sub-project depends on them:
-   `create_patient`, `list_patients`, `get_patient`, `update_patient`,
-   `delete_patient`. Fully unit-tested.
+5. **Patient service** (`app/services/patients.py`) — plain functions, no UI
+   coupling, every other sub-project depends on them: `create_patient`,
+   `list_patients`, `get_patient`, `update_patient`, `delete_patient`. Fully
+   unit-tested.
 
 6. **Health check** (`app/services/health.py`) — `check_health() -> dict`
    confirms DB connectivity + pgvector present; returns version.
 
-7. **Streamlit Home** (`streamlit_app.py`) — minimal: lists patients (via
-   service) and a "Add patient" form. Thin view; all logic in services. This is
-   the mount point the UI sub-project expands into `pages/`.
-
 ### Tech choices (foundation)
 
-- Streamlit for the app/UI; logic kept in `app/services/` so it's testable
-  headless.
+- Plain Python `app/services/` layer; fully testable headless. UI deferred.
 - SQLAlchemy 2.x + Alembic for models/migrations.
 - `pgvector` Python package for the vector column type.
-- `supabase` (supabase-py) for Storage.
 - `pydantic-settings` for config.
-- `pytest` for the test suite (DB tests against a Supabase branch DB or local
-  throwaway Postgres; Storage upload tested against the Supabase bucket or
-  skipped when creds absent).
+- `pytest` for the test suite (DB tests against the Supabase pooler DB).
 
 ### Out of scope (foundation)
 
-OCR, Gemini calls, entity extraction, chunking/embeddings, the 5 UI screens,
-HITL editing. Those are later sub-projects. Foundation only needs the patient
-service + schema + storage client + health to be real and tested, plus a
-minimal Streamlit Home.
+OCR, Gemini calls, entity extraction, chunking/embeddings, any UI, HITL editing.
+Those are later sub-projects. Foundation only needs the patient service + schema
++ local storage helpers + health to be real and tested.
 
 ### Success criteria
 
 - `alembic upgrade head` builds the full schema incl. pgvector on a fresh DB.
 - `check_health()` returns `db: ok` and reports pgvector present.
 - Patient service CRUD works end-to-end with tests passing.
-- `storage.upload_image` puts an image in the Supabase bucket and returns a
-  `storage_key`; the DB stores only that key.
-- `streamlit run streamlit_app.py` shows the Home page with patient list + form.
+- `storage.save_bytes` writes a file to the patient-scoped path and returns it;
+  the DB stores only the path.

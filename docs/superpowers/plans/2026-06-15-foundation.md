@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a runnable Streamlit + Supabase(Postgres/pgvector) skeleton with the full DB schema, a Supabase Storage client for medical images, a testable patient service, a health check, and a minimal Streamlit Home — the scaffold every later sub-project builds on.
+**Goal:** Build a runnable Python service/data layer backed by Supabase(Postgres/pgvector) with the full DB schema, local-disk file storage, a testable patient service, and a health check — the scaffold every later sub-project builds on. No UI yet.
 
-**Architecture:** A thin Streamlit view over a testable service/data layer. SQLAlchemy 2.x models + Alembic migrations against Supabase Postgres with the `vector` extension. Raw files (medical images only, for now) go to a Supabase Storage bucket; the DB stores only a `storage_key` reference + metadata. All business logic lives in `app/services/` and is unit-tested without Streamlit.
+**Architecture:** Plain Python modules (config, db, models, storage, services), fully unit-tested. SQLAlchemy 2.x models + Alembic migrations against Supabase Postgres (reached over the IPv4 session pooler) with the `vector` extension. Raw files live on local disk under a patient-scoped layout; the DB stores only the path + metadata.
 
-**Tech Stack:** Python 3.11+, Streamlit, SQLAlchemy 2.x, Alembic, psycopg (v3), pgvector, supabase-py, pydantic-settings, pytest.
+**Tech Stack:** Python 3.11+, SQLAlchemy 2.x, Alembic, psycopg (v3), pgvector, pydantic-settings, pytest.
 
 ---
 
@@ -15,15 +15,14 @@
 ```
 app/
   __init__.py
-  config.py             # pydantic-settings: DATABASE_URL, GEMINI_API_KEY, SUPABASE_URL/KEY/BUCKET, APP_VERSION
-  db.py                 # SQLAlchemy engine + session factory + Base + session ctx
+  config.py             # pydantic-settings: DATABASE_URL, GEMINI_API_KEY, STORAGE_DIR, APP_VERSION
+  db.py                 # SQLAlchemy engine + session factory + Base
   models.py             # all ORM models (patient, document, entities, links, chunk)
-  storage.py            # Supabase Storage client: upload_image / get_url / delete
+  storage.py            # local-disk file helpers: save_bytes / path_for / read_file
   services/
     __init__.py
     patients.py         # patient CRUD functions
     health.py           # check_health()
-streamlit_app.py        # Streamlit entry: Home (patient list + add form)
 migrations/
   env.py
   versions/0001_initial.py
@@ -37,36 +36,30 @@ tests/
   test_storage.py
   test_patients_service.py
   test_health_service.py
-  test_streamlit_import.py
 alembic.ini
 .env.example
-.streamlit/secrets.toml.example
 requirements.txt
 README.md
 ```
 
-**Test DB:** DB-touching tests run against `TEST_DATABASE_URL` (Supabase branch DB or throwaway local Postgres). `conftest.py` ensures the `vector` extension + tables exist and cleans rows per test. No mocking of Postgres.
-
-**Storage tests:** `test_storage.py` hits the real Supabase bucket; it **skips** when `SUPABASE_URL`/`SUPABASE_KEY` are absent so the suite still runs offline.
+**Test DB:** DB-touching tests run against `TEST_DATABASE_URL` (the Supabase session-pooler URL in `.env`). `conftest.py` ensures the `vector` extension + tables exist and cleans rows per test. No mocking of Postgres.
 
 ---
 
 ### Task 1: Scaffold + dependencies + config
 
 **Files:**
-- Create: `requirements.txt`, `.env.example`, `.streamlit/secrets.toml.example`
+- Create: `requirements.txt`, `.env.example`
 - Create: `app/__init__.py`, `app/config.py`, `tests/__init__.py`
 - Test: `tests/test_config.py`
 
 - [ ] **Step 1: Write `requirements.txt`**
 
 ```
-streamlit==1.41.1
 sqlalchemy==2.0.36
 alembic==1.14.0
 psycopg[binary]==3.2.3
 pgvector==0.3.6
-supabase==2.10.0
 pydantic-settings==2.7.0
 pytest==8.3.4
 ```
@@ -74,29 +67,17 @@ pytest==8.3.4
 - [ ] **Step 2: Write `.env.example`**
 
 ```
-DATABASE_URL=postgresql+psycopg://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
-TEST_DATABASE_URL=postgresql+psycopg://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
+# Supabase session pooler (IPv4). user is postgres.<project_ref>
+DATABASE_URL=postgresql+psycopg://postgres.[PROJECT]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
+TEST_DATABASE_URL=postgresql+psycopg://postgres.[PROJECT]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
 GEMINI_API_KEY=changeme
-SUPABASE_URL=https://[PROJECT].supabase.co
-SUPABASE_KEY=changeme
-SUPABASE_BUCKET=medical-images
+STORAGE_DIR=./data/files
 APP_VERSION=0.1.0
 ```
 
-- [ ] **Step 3: Write `.streamlit/secrets.toml.example`**
+- [ ] **Step 3: Create empty `app/__init__.py` and `tests/__init__.py`**
 
-```toml
-DATABASE_URL = "postgresql+psycopg://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
-GEMINI_API_KEY = "changeme"
-SUPABASE_URL = "https://[PROJECT].supabase.co"
-SUPABASE_KEY = "changeme"
-SUPABASE_BUCKET = "medical-images"
-APP_VERSION = "0.1.0"
-```
-
-- [ ] **Step 4: Create empty `app/__init__.py` and `tests/__init__.py`**
-
-- [ ] **Step 5: Write the failing test** — `tests/test_config.py`
+- [ ] **Step 4: Write the failing test** — `tests/test_config.py`
 
 ```python
 from app.config import Settings
@@ -105,29 +86,27 @@ from app.config import Settings
 def test_settings_reads_env(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@h:5432/db")
     monkeypatch.setenv("GEMINI_API_KEY", "key123")
-    monkeypatch.setenv("SUPABASE_URL", "https://x.supabase.co")
-    monkeypatch.setenv("SUPABASE_KEY", "sk")
+    monkeypatch.setenv("STORAGE_DIR", "/tmp/files")
     s = Settings()
     assert s.database_url == "postgresql+psycopg://u:p@h:5432/db"
     assert s.gemini_api_key == "key123"
-    assert s.supabase_url == "https://x.supabase.co"
-    assert s.supabase_key == "sk"
+    assert s.storage_dir == "/tmp/files"
 
 
 def test_settings_defaults(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@h:5432/db")
-    monkeypatch.delenv("SUPABASE_BUCKET", raising=False)
+    monkeypatch.delenv("STORAGE_DIR", raising=False)
     s = Settings()
-    assert s.supabase_bucket == "medical-images"
+    assert s.storage_dir == "./data/files"
     assert s.app_version == "0.1.0"
 ```
 
-- [ ] **Step 6: Run test to verify it fails**
+- [ ] **Step 5: Run test to verify it fails**
 
 Run: `pip install -r requirements.txt && pytest tests/test_config.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.config'`
 
-- [ ] **Step 7: Implement `app/config.py`**
+- [ ] **Step 6: Implement `app/config.py`**
 
 ```python
 from functools import lru_cache
@@ -141,9 +120,7 @@ class Settings(BaseSettings):
     database_url: str
     test_database_url: str | None = None
     gemini_api_key: str = "changeme"
-    supabase_url: str = ""
-    supabase_key: str = ""
-    supabase_bucket: str = "medical-images"
+    storage_dir: str = "./data/files"
     app_version: str = "0.1.0"
 
 
@@ -152,15 +129,15 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-- [ ] **Step 8: Run test to verify it passes**
+- [ ] **Step 7: Run test to verify it passes**
 
 Run: `pytest tests/test_config.py -v`
 Expected: PASS (2 passed)
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add requirements.txt .env.example .streamlit/ app/__init__.py app/config.py tests/__init__.py tests/test_config.py
+git add requirements.txt .env.example app/__init__.py app/config.py tests/__init__.py tests/test_config.py
 git commit -m "feat: scaffold, dependencies, and settings"
 ```
 
@@ -229,8 +206,8 @@ def session_scope() -> Generator[Session, None, None]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `TEST_DATABASE_URL=$DATABASE_URL pytest tests/test_db.py -v`
-Expected: PASS (2 passed). Requires `DATABASE_URL` exported to a reachable Supabase/Postgres.
+Run: `pytest tests/test_db.py -v`
+Expected: PASS (2 passed). Uses `TEST_DATABASE_URL` from `.env` (Supabase pooler).
 
 - [ ] **Step 5: Commit**
 
@@ -266,10 +243,9 @@ def test_tables_registered():
     assert expected.issubset(set(Base.metadata.tables.keys()))
 
 
-def test_document_has_storage_key():
+def test_document_has_file_path():
     cols = {c.name for c in Document.__table__.columns}
-    assert "storage_key" in cols
-    assert "file_path" not in cols
+    assert "file_path" in cols
     assert "raw_ocr_text" in cols
 
 
@@ -319,7 +295,7 @@ class Document(Base):
     patient_id: Mapped[int] = mapped_column(ForeignKey("patient.id", ondelete="CASCADE"), index=True)
     doc_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     classification: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)  # Supabase Storage object key; NULL when raw file not kept
+    file_path: Mapped[str | None] = mapped_column(Text, nullable=True)  # local disk path under STORAGE_DIR
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     raw_ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -522,7 +498,7 @@ def upgrade() -> None:
         sa.Column("patient_id", sa.Integer, sa.ForeignKey("patient.id", ondelete="CASCADE"), index=True, nullable=False),
         sa.Column("doc_type", sa.String(50)),
         sa.Column("classification", sa.String(50)),
-        sa.Column("storage_key", sa.Text),
+        sa.Column("file_path", sa.Text),
         sa.Column("source_type", sa.String(20)),
         sa.Column("mime_type", sa.String(100)),
         sa.Column("raw_ocr_text", sa.Text),
@@ -629,12 +605,12 @@ def test_migration_builds_schema_and_vector():
         cols = conn.execute(text(
             "SELECT column_name FROM information_schema.columns WHERE table_name='document'"
         )).scalars().all()
-        assert "storage_key" in cols
+        assert "file_path" in cols
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `TEST_DATABASE_URL=$DATABASE_URL pytest tests/test_migration.py -v`
+Run: `pytest tests/test_migration.py -v`
 Expected: PASS once the migration files exist (before then, alembic errors → FAIL).
 
 - [ ] **Step 6: Commit**
@@ -646,7 +622,7 @@ git commit -m "feat: alembic initial migration with full schema and pgvector"
 
 ---
 
-### Task 5: Supabase Storage client (medical images)
+### Task 5: Local-disk file storage helpers
 
 **Files:**
 - Create: `app/storage.py`
@@ -655,30 +631,24 @@ git commit -m "feat: alembic initial migration with full schema and pgvector"
 - [ ] **Step 1: Write the failing test** — `tests/test_storage.py`
 
 ```python
-import os
-import uuid
+from pathlib import Path
 
-import pytest
-
-from app.storage import upload_image, get_url, delete, object_key
-
-HAS_CREDS = bool(os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_KEY"))
+import app.storage as storage
+from app.storage import save_bytes, path_for, read_file
 
 
-def test_object_key_layout():
-    assert object_key(7, 42, "png") == "7/42.png"
-    assert object_key(1, 2, ".jpg") == "1/2.jpg"
+def test_path_for(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "STORAGE_DIR", str(tmp_path))
+    assert path_for(1, 2, "png") == str(tmp_path / "1" / "2.png")
+    assert path_for(1, 2, ".jpg") == str(tmp_path / "1" / "2.jpg")
 
 
-@pytest.mark.skipif(not HAS_CREDS, reason="Supabase creds not set")
-def test_upload_get_delete_roundtrip():
-    pid = 999000 + (uuid.uuid4().int % 1000)
-    key = upload_image(patient_id=pid, document_id=1, ext="png",
-                       data=b"\x89PNG\r\n\x1a\n fake", content_type="image/png")
-    assert key == f"{pid}/1.png"
-    url = get_url(key)
-    assert isinstance(url, str) and url.startswith("http")
-    delete(key)  # cleanup; should not raise
+def test_save_and_read(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "STORAGE_DIR", str(tmp_path))
+    p = save_bytes(patient_id=7, document_id=42, ext="pdf", data=b"%PDF-1.4 hi")
+    assert Path(p).exists()
+    assert p == str(tmp_path / "7" / "42.pdf")
+    assert read_file(p) == b"%PDF-1.4 hi"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -689,57 +659,39 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'app.storage'`
 - [ ] **Step 3: Implement `app/storage.py`**
 
 ```python
-from functools import lru_cache
-
-from supabase import Client, create_client
+from pathlib import Path
 
 from app.config import get_settings
 
-
-@lru_cache
-def _client() -> Client:
-    s = get_settings()
-    if not s.supabase_url or not s.supabase_key:
-        raise RuntimeError("SUPABASE_URL / SUPABASE_KEY not configured")
-    return create_client(s.supabase_url, s.supabase_key)
+STORAGE_DIR = get_settings().storage_dir
 
 
-def object_key(patient_id: int, document_id: int, ext: str) -> str:
-    return f"{patient_id}/{document_id}.{ext.lstrip('.')}"
+def path_for(patient_id: int, document_id: int, ext: str) -> str:
+    ext = ext.lstrip(".")
+    return str(Path(STORAGE_DIR) / str(patient_id) / f"{document_id}.{ext}")
 
 
-def upload_image(patient_id: int, document_id: int, ext: str, data: bytes,
-                 content_type: str = "application/octet-stream") -> str:
-    """Upload a medical image to Supabase Storage; return the object key."""
-    key = object_key(patient_id, document_id, ext)
-    bucket = get_settings().supabase_bucket
-    _client().storage.from_(bucket).upload(
-        path=key, file=data,
-        file_options={"content-type": content_type, "upsert": "true"},
-    )
-    return key
+def save_bytes(patient_id: int, document_id: int, ext: str, data: bytes) -> str:
+    target = Path(path_for(patient_id, document_id, ext))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return str(target)
 
 
-def get_url(storage_key: str) -> str:
-    bucket = get_settings().supabase_bucket
-    return _client().storage.from_(bucket).get_public_url(storage_key)
-
-
-def delete(storage_key: str) -> None:
-    bucket = get_settings().supabase_bucket
-    _client().storage.from_(bucket).remove([storage_key])
+def read_file(path: str) -> bytes:
+    return Path(path).read_bytes()
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_storage.py -v`
-Expected: PASS — `test_object_key_layout` passes; roundtrip passes if Supabase creds + a `medical-images` bucket exist, else SKIPPED.
+Expected: PASS (2 passed)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add app/storage.py tests/test_storage.py
-git commit -m "feat: Supabase Storage client for medical images"
+git commit -m "feat: local-disk file storage helpers with patient-scoped layout"
 ```
 
 ---
@@ -841,7 +793,7 @@ def test_update_missing_raises(db):
 
 - [ ] **Step 4: Run test to verify it fails**
 
-Run: `TEST_DATABASE_URL=$DATABASE_URL pytest tests/test_patients_service.py -v`
+Run: `pytest tests/test_patients_service.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.patients'`
 
 - [ ] **Step 5: Implement `app/services/patients.py`**
@@ -890,7 +842,7 @@ def delete_patient(db: Session, patient_id: int) -> None:
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `TEST_DATABASE_URL=$DATABASE_URL pytest tests/test_patients_service.py -v`
+Run: `pytest tests/test_patients_service.py -v`
 Expected: PASS (6 passed)
 
 - [ ] **Step 7: Write the failing test** — `tests/test_health_service.py`
@@ -936,7 +888,7 @@ def check_health() -> dict:
 
 - [ ] **Step 9: Run test to verify it passes**
 
-Run: `TEST_DATABASE_URL=$DATABASE_URL pytest tests/test_health_service.py -v`
+Run: `pytest tests/test_health_service.py -v`
 Expected: PASS (1 passed). Requires the `vector` extension present (conftest creates it).
 
 - [ ] **Step 10: Commit**
@@ -948,105 +900,7 @@ git commit -m "feat: patient service + health service with tests"
 
 ---
 
-### Task 7: Streamlit Home
-
-**Files:**
-- Create: `streamlit_app.py`
-- Test: `tests/test_streamlit_import.py`
-
-- [ ] **Step 1: Write the failing test** — `tests/test_streamlit_import.py`
-
-```python
-import importlib
-
-
-def test_streamlit_app_exposes_main():
-    mod = importlib.import_module("streamlit_app")
-    assert hasattr(mod, "main")
-    assert callable(mod.main)
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `pytest tests/test_streamlit_import.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'streamlit_app'`
-
-- [ ] **Step 3: Implement `streamlit_app.py`**
-
-```python
-import streamlit as st
-
-from app.db import SessionLocal
-from app.services import patients as patient_svc
-from app.services.health import check_health
-
-
-def main() -> None:
-    st.set_page_config(page_title="Medical Document Intelligence", layout="wide")
-    st.title("Medical Document Intelligence")
-
-    health = check_health()
-    if health["db"] == "ok" and health["pgvector"]:
-        st.caption(f"DB ok · pgvector ready · v{health['version']}")
-    else:
-        st.error(f"Backend not ready: {health}")
-
-    db = SessionLocal()
-    try:
-        st.subheader("Patients")
-        people = patient_svc.list_patients(db)
-        if people:
-            st.table([
-                {"id": p.id, "name": p.name, "age": p.age,
-                 "gender": p.gender, "relationship": p.relationship}
-                for p in people
-            ])
-        else:
-            st.info("No patients yet. Add one below.")
-
-        with st.form("add_patient", clear_on_submit=True):
-            st.write("Add patient")
-            name = st.text_input("Name")
-            age = st.number_input("Age", min_value=0, max_value=130, value=0, step=1)
-            gender = st.selectbox("Gender", ["", "male", "female", "other"])
-            relationship = st.text_input("Relationship (e.g. mother, self)")
-            submitted = st.form_submit_button("Save")
-            if submitted and name.strip():
-                patient_svc.create_patient(
-                    db, name=name.strip(),
-                    age=int(age) or None,
-                    gender=gender or None,
-                    relationship=relationship.strip() or None,
-                )
-                st.success(f"Added {name}")
-                st.rerun()
-    finally:
-        db.close()
-
-
-main()
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `pytest tests/test_streamlit_import.py -v`
-Expected: PASS. (Importing runs Streamlit calls outside a script-run context, which only logs "missing ScriptRunContext" warnings — not errors. The `main` attribute exists.)
-
-- [ ] **Step 5: Manual smoke check**
-
-Run: `TEST_DATABASE_URL=$DATABASE_URL streamlit run streamlit_app.py`
-Expected: Home page loads, shows "DB ok · pgvector ready", patient table/empty state, and an Add-patient form that persists a row on submit.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add streamlit_app.py tests/test_streamlit_import.py
-git commit -m "feat: Streamlit Home with patient list and add form"
-```
-
----
-
-### Task 8: README + full suite green
+### Task 7: README + full suite green
 
 **Files:**
 - Create: `README.md`
@@ -1057,31 +911,30 @@ git commit -m "feat: Streamlit Home with patient list and add form"
 ```markdown
 # Medical Document Intelligence & Tracker
 
-Foundation sub-project: Streamlit + Supabase(Postgres/pgvector) skeleton.
+Foundation sub-project: a Python service/data layer on Supabase(Postgres/pgvector).
+Runs locally. No UI yet.
 
-## Setup (local)
+## Setup
 
 1. `python -m venv .venv && source .venv/bin/activate`
 2. `pip install -r requirements.txt`
-3. Copy `.env.example` to `.env`; set `DATABASE_URL` (Supabase Postgres),
-   `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BUCKET`, `GEMINI_API_KEY`.
-4. In Supabase, create a Storage bucket named `medical-images`.
-5. `alembic upgrade head`
-6. `streamlit run streamlit_app.py`
-
-## Deploy (free)
-
-Push to GitHub, then deploy on Streamlit Community Cloud. Put the same keys in
-the app's Secrets (see `.streamlit/secrets.toml.example`). Supabase holds the
-database and file storage, so data persists across app restarts.
+3. Copy `.env.example` to `.env`; set `DATABASE_URL` to your Supabase **session
+   pooler** URL (IPv4: `postgresql+psycopg://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres`).
+4. `alembic upgrade head`
 
 ## Tests
 
-`TEST_DATABASE_URL=<postgres-url> pytest -v`
+`pytest -v`
 
-DB tests run against a real Postgres (Supabase branch DB or throwaway local) so
-pgvector behaviour is exercised, not mocked. The Supabase Storage roundtrip test
-is skipped unless `SUPABASE_URL` / `SUPABASE_KEY` are set.
+DB tests run against the real Supabase Postgres (via `DATABASE_URL` /
+`TEST_DATABASE_URL`) so pgvector behaviour is exercised, not mocked.
+
+## Notes
+
+- Direct Supabase connections are IPv6-only; use the session pooler URL for
+  IPv4 networks and tooling (Alembic, local runs).
+- Raw files are stored on local disk under `STORAGE_DIR`; the DB stores only
+  the path.
 
 ## Build order
 
@@ -1091,22 +944,23 @@ This repo currently implements sub-project 1 (Foundation).
 
 - [ ] **Step 2: Run the full suite**
 
-Run: `TEST_DATABASE_URL=$DATABASE_URL pytest -v`
-Expected: all tests pass (Storage roundtrip skipped if no creds).
+Run: `pytest -v`
+Expected: all tests pass.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add README.md
-git commit -m "docs: README with setup, deploy, and test instructions"
+git commit -m "docs: README with setup and test instructions"
 ```
 
 ---
 
 ## Self-Review Notes
 
-- **Spec coverage:** scaffold + config incl. Supabase vars (T1), DB engine (T2), full schema models with `storage_key` (T3), Alembic migration + pgvector + `vector(768)` (T4), Supabase Storage client for images only (T5), patient service + health service (T6), Streamlit Home thin view (T7), README/deploy/success criteria (T8). All Foundation deliverables and success criteria mapped.
-- **Streamlit Cloud / persistence:** files go to Supabase Storage, DB to Supabase Postgres — nothing relies on local disk, so the ephemeral filesystem is a non-issue. Only medical images are uploaded for now (`storage_key` NULL otherwise), per decision.
-- **Type consistency:** `Settings` fields; `engine`/`SessionLocal`/`Base` (db.py); model class names incl. `Document.storage_key`; storage funcs `object_key`/`upload_image`/`get_url`/`delete`; service funcs `create_patient`/`list_patients`/`get_patient`/`update_patient`/`delete_patient`; `check_health`; `streamlit_app.main` — all referenced consistently across tasks.
-- **Out of scope (later sub-projects):** OCR, Gemini calls, entity extraction, chunking/embeddings population, the 5 UI screens, HITL editing.
-- **Known constraint:** DB-touching tests need a reachable Postgres with permission to `CREATE EXTENSION vector` (Supabase grants this); Storage test needs a `medical-images` bucket or it skips.
+- **Spec coverage:** scaffold + config (T1), DB engine via pooler (T2), full schema models with `file_path` (T3), Alembic migration + pgvector + `vector(768)` (T4), local-disk storage helpers (T5), patient service + health service (T6), README/success criteria (T7). All Foundation deliverables and success criteria mapped.
+- **No UI / no Streamlit / no FastAPI:** intentionally deferred per decision. Foundation is a pure, testable service layer.
+- **Type consistency:** `Settings` fields; `engine`/`SessionLocal`/`Base` (db.py); model class names incl. `Document.file_path`; storage funcs `path_for`/`save_bytes`/`read_file` (module-level `STORAGE_DIR` patched in tests); service funcs `create_patient`/`list_patients`/`get_patient`/`update_patient`/`delete_patient`; `check_health` — all referenced consistently across tasks.
+- **Out of scope (later sub-projects):** OCR, Gemini calls, entity extraction, chunking/embeddings population, UI (the 5 screens), HITL editing.
+- **Known constraint:** DB-touching tests need the Supabase pooler reachable with permission to `CREATE EXTENSION vector` (Supabase grants this on the project DB).
+```
