@@ -70,6 +70,8 @@ def dashboard(db, patients, label_to_id, active_pid, selected_label) -> None:
         st.info("No documents yet.")
 
     st.subheader("📤 Upload document")
+    st.caption("This only **stores** the file. For OCR + entity extraction + arranging, "
+               "use the **Chat** view (sidebar) and say “read this and arrange it”.")
     if patients:
         up_label = st.selectbox("For patient", list(label_to_id), key="upload_patient")
         up_pid = label_to_id[up_label]
@@ -119,13 +121,43 @@ def _cfg():
     return {"configurable": {"deps": _deps(), "thread_id": st.session_state.thread_id}}
 
 
+_NODE_LABELS = {
+    "router": "🧭 Routing your request…",
+    "extract_text": "📖 Reading the document (OCR)…",
+    "extract_entities": "🔬 Extracting patient, symptoms, meds, tests…",
+    "resolve_patient": "🧑 Matching patient…",
+    "persist": "💾 Saving entities…",
+    "chunk_embed": "📚 Indexing for search…",
+    "parse_filters": "🔎 Parsing your query…",
+    "query_db": "🗂️ Looking up records…",
+    "transform_query": "✍️ Reformulating the query…",
+    "retrieve": "🔍 Searching documents…",
+    "rerank": "📊 Ranking results…",
+    "grade": "⚖️ Checking answer confidence…",
+    "correct_query": "🔁 Refining the search…",
+    "generate_answer": "🧠 Composing the answer…",
+}
+
+
 def _drive(graph, cfg, payload) -> None:
-    """Invoke (or resume) the graph; capture an interrupt or refresh the chat log."""
-    updates = graph.invoke(payload, cfg, stream_mode="updates")
+    """Stream (or resume) the graph with live progress; capture an interrupt or refresh log."""
     interrupt_val = None
-    for u in updates if isinstance(updates, list) else []:
-        if isinstance(u, dict) and "__interrupt__" in u:
-            interrupt_val = u["__interrupt__"][0].value
+    try:
+        with st.status("Working…", expanded=True) as status:
+            for chunk in graph.stream(payload, cfg, stream_mode="updates"):
+                for node in chunk:
+                    if node == "__interrupt__":
+                        interrupt_val = chunk["__interrupt__"][0].value
+                        continue
+                    status.write(_NODE_LABELS.get(node, f"… {node}"))
+            status.update(
+                label="⏸️ Paused for your approval" if interrupt_val else "✅ Done",
+                state="complete",
+            )
+    except Exception as e:  # noqa: BLE001 - surface provider/OCR failures instead of a blank screen
+        st.error(f"The agent hit an error: {e}")
+        return
+
     if interrupt_val is not None:
         st.session_state.pending_interrupt = interrupt_val
     else:
