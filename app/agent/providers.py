@@ -153,16 +153,18 @@ def build_deps(session_factory: Any):
     s = get_settings()
     chats = []
     visions = []
-    embed_candidates = []
     if _has_gemini():
         chats.append(GeminiChat())
         visions.append(GeminiVision())
-        embed_candidates.append(GeminiEmbedder())
     if s.groq_api_key:
         chats.append(GroqChat())
         visions.append(GroqVision())
     chats.append(OllamaChat())
-    embed_candidates.append(OllamaEmbedder())
+
+    # Embeddings are pinned to a single provider (Ollama nomic-embed-text, 768-dim):
+    # mixing embedding providers corrupts the shared pgvector space, and current
+    # Gemini embedding models don't match the fixed vector(768) column.
+    embed_candidates = [OllamaEmbedder()]
 
     from app.agent.state import Deps
     return Deps(
