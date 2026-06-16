@@ -35,3 +35,9 @@ def db():
         yield s
     finally:
         s.close()
+
+
+@pytest.fixture
+def db_session_factory():
+    from app.db import SessionLocal
+    return SessionLocal
