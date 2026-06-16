@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     rag_top_k: int = 5
     rag_confidence_threshold: float = 0.5
     gemini_api_key: str = "changeme"
+    gemini_model: str = "gemini-2.0-flash"
+    gemini_vision_model: str = "gemini-2.0-flash"
+    gemini_embed_model: str = "models/text-embedding-004"
     storage_dir: str = "./data/files"
     app_version: str = "0.1.0"
 
