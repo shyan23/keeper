@@ -1,4 +1,5 @@
 import subprocess
+import sys
 
 from sqlalchemy import text
 from app.db import engine
@@ -11,8 +12,11 @@ _TABLES = [
 ]
 
 
-def _run(cmd):
-    return subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+def _run(args):
+    # Invoke alembic via the current interpreter so it is found regardless of PATH
+    # (a bare `alembic` shell command is not on PATH under every runner).
+    return subprocess.run([sys.executable, "-m", *args], check=True,
+                          capture_output=True, text=True)
 
 
 def test_migration_builds_schema_and_vector():
@@ -22,7 +26,7 @@ def test_migration_builds_schema_and_vector():
         for t in _TABLES:
             conn.execute(text(f'DROP TABLE IF EXISTS "{t}" CASCADE'))
 
-    _run("alembic upgrade head")
+    _run(["alembic", "upgrade", "head"])
 
     with engine.connect() as conn:
         ext = conn.execute(text("SELECT 1 FROM pg_extension WHERE extname='vector'")).scalar()
