@@ -6,7 +6,7 @@ from typing import Any
 from langgraph.types import interrupt
 
 from app.agent.state import ExtractionResult
-from app.services.chunking import chunk_and_embed
+from app.services.chunking import chunk_and_embed, make_semantic_chunks
 from app.services.documents import get_document
 from app.services.entities import persist_extraction
 from app.services.extraction import extract_text
@@ -100,9 +100,11 @@ def chunk_embed_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str,
             doc.raw_ocr_text = state["ocr_text"]
             doc.status = "indexed"
             s.commit()
+        text = state.get("ocr_text") or ""
+        chunks = make_semantic_chunks(text, deps.embedder, header=header) if text else []
         n = chunk_and_embed(
             s, document_id=state["document_id"], patient_id=state["patient_id"],
-            text=state.get("ocr_text") or "", header=header, embedder=deps.embedder,
+            text=text, header=header, embedder=deps.embedder, chunks=chunks or None,
         )
     return {"messages": state["messages"] + [
         {"role": "assistant", "content": f"Indexed {n} chunks. Ingestion complete."}
