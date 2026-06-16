@@ -17,7 +17,7 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 # 30 days: OCR/embeddings/extraction for identical input never change.
-_DEFAULT_TTL = 60 * 60 * 24 * 30
+_DEFAULT_TTL = 60 * 60 * 24 * 365 * 5
 
 
 @functools.lru_cache(maxsize=1)

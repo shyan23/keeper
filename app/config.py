@@ -8,9 +8,12 @@ class Settings(BaseSettings):
 
     database_url: str
     test_database_url: str | None = None
-    # AI provider: "ollama" (local only) or "fallback" (Gemini->Groq->Ollama).
-    # Default ollama: cloud providers are off unless explicitly set to "fallback".
-    ai_provider: str = "ollama"
+    # AI chat provider:
+    #   "groq"     — Groq primary (fast, ~3-4s structured), Ollama fallback. DEFAULT.
+    #   "ollama"   — local only, no cloud (slow structured extraction on CPU).
+    #   "fallback" — Gemini -> Groq -> Ollama.
+    # OCR is always Tesseract; embeddings always Ollama (768-dim, pinned).
+    ai_provider: str = "groq"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     ollama_host: str = "http://localhost:11434"

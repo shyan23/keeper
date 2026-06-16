@@ -6,9 +6,8 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.router import classify_intent
 from app.agent.state import AgentState
 from app.agent.nodes.ingest import (
-    chunk_embed_node, confirm_entities_node, confirm_patient_node,
-    create_document_node, extract_entities_node, extract_text_node, persist_node,
-    resolve_patient_node,
+    chunk_embed_node, confirm_ingest_node, create_document_node,
+    extract_entities_node, extract_text_node, persist_node, resolve_patient_node,
 )
 from app.agent.nodes.structured import parse_filters_node, query_db_node
 from app.agent.nodes.rag import (
@@ -21,8 +20,8 @@ def _route(state: AgentState) -> str:
     return state.get("intent") or "rag_query"
 
 
-def _after_confirm_entities(state: AgentState) -> str:
-    return "rejected" if state.get("intent") == "rejected" else "resolve_patient"
+def _after_confirm_ingest(state: AgentState) -> str:
+    return "rejected" if state.get("intent") == "rejected" else "create_document"
 
 
 def _crag_route(state: AgentState) -> str:
@@ -38,9 +37,8 @@ def build_graph(checkpointer=None):
     # ingest
     g.add_node("extract_text", extract_text_node)
     g.add_node("extract_entities", extract_entities_node)
-    g.add_node("confirm_entities", confirm_entities_node)
     g.add_node("resolve_patient", resolve_patient_node)
-    g.add_node("confirm_patient", confirm_patient_node)
+    g.add_node("confirm_ingest", confirm_ingest_node)
     g.add_node("create_document", create_document_node)
     g.add_node("persist", persist_node)
     g.add_node("chunk_embed", chunk_embed_node)
@@ -63,14 +61,13 @@ def build_graph(checkpointer=None):
         "rag_query": "transform_query",
     })
 
-    # ingest chain
+    # ingest chain — single approval gate (patient + entities reviewed together)
     g.add_edge("extract_text", "extract_entities")
-    g.add_edge("extract_entities", "confirm_entities")
-    g.add_conditional_edges("confirm_entities", _after_confirm_entities, {
-        "rejected": END, "resolve_patient": "resolve_patient",
+    g.add_edge("extract_entities", "resolve_patient")
+    g.add_edge("resolve_patient", "confirm_ingest")
+    g.add_conditional_edges("confirm_ingest", _after_confirm_ingest, {
+        "rejected": END, "create_document": "create_document",
     })
-    g.add_edge("resolve_patient", "confirm_patient")
-    g.add_edge("confirm_patient", "create_document")
     g.add_edge("create_document", "persist")
     g.add_edge("persist", "chunk_embed")
     g.add_edge("chunk_embed", END)

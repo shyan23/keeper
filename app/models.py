@@ -30,6 +30,7 @@ class Document(Base):
     file_path: Mapped[str | None] = mapped_column(Text, nullable=True)  # local disk path under STORAGE_DIR
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)  # SHA-256 of file bytes, for dedup
     raw_ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="uploaded")
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,9 @@ from app.agent.state import ExtractionResult
 from app.cache import get_or_set, make_key
 from app.config import get_settings
 from app.services.chunking import chunk_and_embed, make_semantic_chunks
-from app.services.documents import create_document, get_document, set_file_path
+from app.services.documents import (
+    create_document, find_by_content_hash, get_document, set_file_path,
+)
 from app.services.entities import persist_extraction
 from app.services.extraction import extract_text
 from app.services.patients import create_patient
@@ -32,7 +35,7 @@ def extract_text_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str
     data = Path(state["file_path"]).read_bytes()
     text = extract_text(data, mime_type=state["mime_type"], vision=deps.vision,
                         progress=cfg.get("progress"))
-    return {"ocr_text": text}
+    return {"ocr_text": text, "content_hash": hashlib.sha256(data).hexdigest()}
 
 
 def extract_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -51,15 +54,9 @@ def extract_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict
     return {"extracted": extracted}
 
 
-def confirm_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """HITL gate: human reviews/edits extracted entities; same approval commits the write."""
-    decision = interrupt({"type": "confirm_entities", "extracted": state["extracted"]})
-    if not decision.get("approved"):
-        return {"extracted": None, "intent": "rejected"}
-    return {"extracted": decision.get("extracted", state["extracted"])}
-
-
 def resolve_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """No prompt — just look up name matches so the single gate can show them.
+    Pre-selects patient_id when exactly one existing patient matches the name."""
     deps = config["configurable"]["deps"]
     name = (state.get("extracted") or {}).get("patient_name")
     if not name:
@@ -76,31 +73,36 @@ def resolve_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
     return {"patient_id": None, "patient_candidates": cands}
 
 
-def confirm_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """HITL gate (reached when patient is new/ambiguous): pick an existing patient
-    or create a new profile from the extracted name/age/gender (human-verified)."""
-    if state.get("patient_id"):
-        return {}
+def confirm_ingest_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Single HITL gate: human reviews the patient AND the extracted entities in one
+    step. The same approval selects/creates the patient and commits the entities."""
     deps = config["configurable"]["deps"]
     ex = state.get("extracted") or {}
     decision = interrupt({
-        "type": "confirm_patient",
+        "type": "confirm_ingest",
+        "extracted": ex,
         "candidates": state.get("patient_candidates", []),
+        "patient_id": state.get("patient_id"),  # set if a single existing match
         "extracted_name": ex.get("patient_name"),
         "extracted_age": ex.get("patient_age"),
         "extracted_gender": ex.get("patient_gender"),
     })
-    pid = decision.get("patient_id")
-    if pid is None and decision.get("create_new"):
+    if not decision.get("approved"):
+        return {"extracted": None, "intent": "rejected"}
+
+    extracted = decision.get("extracted", ex)
+    # Patient: use the chosen/pre-matched id, else create a new profile.
+    pid = decision.get("patient_id") or state.get("patient_id")
+    if pid is None:
         with deps.session_factory() as s:
             p = create_patient(
                 s,
-                name=decision.get("name") or ex.get("patient_name") or "Unknown",
-                age=decision.get("age", ex.get("patient_age")),
-                gender=decision.get("gender") or ex.get("patient_gender"),
+                name=decision.get("name") or extracted.get("patient_name") or "Unknown",
+                age=decision.get("age", extracted.get("patient_age")),
+                gender=decision.get("gender") or extracted.get("patient_gender"),
             )
             pid = p.id
-    return {"patient_id": pid}
+    return {"extracted": extracted, "patient_id": int(pid)}
 
 
 def create_document_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -113,10 +115,28 @@ def create_document_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
     ex = state.get("extracted") or {}
     ext = state.get("file_ext") or "bin"
     staged = state.get("file_path")
+    chash = state.get("content_hash")
+
+    # Idempotency: if this exact file was already ingested, reuse that document
+    # and skip persist/index so the same upload can't duplicate entities.
+    if chash:
+        with deps.session_factory() as s:
+            existing = find_by_content_hash(s, chash)
+            dup = (existing.id, existing.patient_id) if existing is not None else None
+        if dup is not None:
+            if staged and os.path.exists(staged):
+                try:
+                    os.remove(staged)
+                except OSError:
+                    pass
+            return {"document_id": dup[0], "patient_id": dup[1],
+                    "already_ingested": True}
+
     with deps.session_factory() as s:
         doc = create_document(
             s, patient_id=state["patient_id"], doc_type=ex.get("doc_type"),
             source_type=state.get("source_type"), mime_type=state.get("mime_type"),
+            content_hash=chash,
         )
         doc_id = doc.id
         final_path = staged
@@ -132,6 +152,11 @@ def create_document_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
 
 
 def persist_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    if state.get("already_ingested"):
+        return {"messages": state["messages"] + [{
+            "role": "assistant",
+            "content": "This document was already on file — skipped to avoid duplicates.",
+        }]}
     deps = config["configurable"]["deps"]
     result = ExtractionResult(**state["extracted"])
     with deps.session_factory() as s:
@@ -143,6 +168,8 @@ def persist_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any
 
 
 def chunk_embed_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    if state.get("already_ingested"):
+        return {}  # already indexed on the first ingest
     deps = config["configurable"]["deps"]
     ex = state["extracted"]
     header = f"{ex.get('patient_name') or ''} · {ex.get('doc_type') or 'doc'} · {ex.get('doc_date') or ''}".strip()

@@ -74,6 +74,8 @@ class AgentState(TypedDict, total=False):
     mime_type: str | None
     source_type: str | None
     ocr_text: str | None
+    content_hash: str | None              # SHA-256 of file bytes (dedup)
+    already_ingested: bool                # True when an identical file was found
     extracted: dict[str, Any] | None      # ExtractionResult.model_dump()
     patient_id: int | None
     patient_candidates: list[dict[str, Any]]

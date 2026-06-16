@@ -35,8 +35,8 @@ class _FakeEmbedder:
 
 
 def test_ingest_existing_patient_creates_document(db_session_factory, tmp_path):
-    """Upload for an already-known patient: pauses at confirm_entities, then the
-    agent (not the user) creates the document under the matched patient."""
+    """Upload for an already-known patient: pauses at the single confirm_ingest
+    gate, then the agent creates the document under the matched patient."""
     from app.services.patients import create_patient
     from app.models import Document
     sf = db_session_factory
@@ -55,10 +55,10 @@ def test_ingest_existing_patient_creates_document(db_session_factory, tmp_path):
              "source_type": "image"}
 
     result = graph.invoke(state, cfg, stream_mode="updates")
-    assert "__interrupt__" in result[-1]  # paused at confirm_entities
+    assert result[-1]["__interrupt__"][0].value["type"] == "confirm_ingest"
 
     final = graph.invoke(Command(resume={"approved": True}), cfg)
-    assert final["patient_id"] == pid       # matched "Graph Pt" by name, no patient gate
+    assert final["patient_id"] == pid       # matched "Graph Pt" by name in one gate
     assert final.get("document_id")         # document created by the agent
     assert any("Indexed" in m["content"] for m in final["messages"])
     with sf() as s:
@@ -66,9 +66,9 @@ def test_ingest_existing_patient_creates_document(db_session_factory, tmp_path):
 
 
 def test_ingest_new_patient_full_agentic_flow(db_session_factory, tmp_path):
-    """Upload for an UNKNOWN patient: two gates (entities, then create-profile).
-    The agent extracts the name, the human approves a new profile, then the
-    document + entities are arranged under it."""
+    """Upload for an UNKNOWN patient: ONE gate reviews patient + entities together.
+    The agent extracts the name; approval creates the profile and arranges the
+    document + entities under it."""
     from app.models import Patient, Document
     sf = db_session_factory
     f = tmp_path / "rx.png"
@@ -82,12 +82,9 @@ def test_ingest_new_patient_full_agentic_flow(db_session_factory, tmp_path):
              "source_type": "image"}
 
     r1 = graph.invoke(state, cfg, stream_mode="updates")
-    assert r1[-1]["__interrupt__"][0].value["type"] == "confirm_entities"
+    assert r1[-1]["__interrupt__"][0].value["type"] == "confirm_ingest"  # single gate
 
-    r2 = graph.invoke(Command(resume={"approved": True}), cfg, stream_mode="updates")
-    assert r2[-1]["__interrupt__"][0].value["type"] == "confirm_patient"  # name is new
-
-    final = graph.invoke(Command(resume={"create_new": True}), cfg)
+    final = graph.invoke(Command(resume={"approved": True}), cfg)
     assert final.get("patient_id") and final.get("document_id")
     with sf() as s:
         pat = s.get(Patient, final["patient_id"])

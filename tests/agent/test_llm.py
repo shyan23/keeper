@@ -6,17 +6,21 @@ class _Schema(BaseModel):
     answer: str
 
 
+class _R:
+    def __init__(self, content):
+        self.content = content
+
+
 class _FakeLC:
     def invoke(self, prompt):
-        class _R:
-            content = "hello world"
-        return _R()
+        return _R("hello world")
 
-    def with_structured_output(self, schema):
-        class _S:
+    def bind(self, **kwargs):
+        # structured() forces json_object via bind(); return JSON for the schema.
+        class _Bound:
             def invoke(self, prompt):
-                return schema(answer="grounded")
-        return _S()
+                return _R('{"answer": "grounded"}')
+        return _Bound()
 
 
 def test_chat_complete_returns_text():

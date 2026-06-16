@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 
 from pydantic import BaseModel
 
@@ -19,7 +20,18 @@ class GroqChat:
         return self._inner.invoke(prompt).content
 
     def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
-        return self._inner.with_structured_output(schema).invoke(prompt)
+        # json_object response_format + schema-in-prompt, parsed manually. Unlike
+        # tool/function binding on Groq llama (which truncated the tests array to
+        # 1 of 25), raw JSON mode returns every item — and in ~3-4s.
+        instructed = (
+            f"{prompt}\n\nReturn ONLY a JSON object — no prose, no code fences — "
+            f"with EVERY item populated, matching this JSON schema:\n"
+            f"{json.dumps(schema.model_json_schema())}"
+        )
+        raw = self._inner.bind(
+            response_format={"type": "json_object"}
+        ).invoke(instructed).content
+        return schema.model_validate_json(raw)
 
 
 class GroqVision:

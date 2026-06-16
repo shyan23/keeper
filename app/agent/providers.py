@@ -192,7 +192,8 @@ def _has_gemini() -> bool:
 def build_deps(session_factory: Any):
     """Construct production Deps.
 
-    ai_provider="ollama" (default): local-only, no cloud calls.
+    ai_provider="groq" (default): Groq primary, Ollama fallback.
+    ai_provider="ollama": local-only, no cloud calls.
     ai_provider="fallback": Gemini->Groq->Ollama chat chain (cloud first).
     OCR is always Tesseract (CPU) — no vision models.
     """
@@ -203,7 +204,9 @@ def build_deps(session_factory: Any):
             chats.append(GeminiChat())
         if s.groq_api_key:
             chats.append(GroqChat())
-    chats.append(OllamaChat())
+    elif s.ai_provider == "groq" and s.groq_api_key:
+        chats.append(GroqChat())
+    chats.append(OllamaChat())  # always last: offline fallback
 
     # OCR is Tesseract only — no vision models (CPU, ~0 RAM, deterministic).
     visions = [TesseractVision()]

@@ -54,26 +54,47 @@ def patients_page(db, patients, active_pid) -> None:
         st.info("No patients yet. Add one in the sidebar, then upload a document in **Chat**.")
 
 
+def _provenance_expander(rows, label_key, source_lines) -> None:
+    """A real 'source' control: collapsed by default, shows the document span
+    that proves each row (the messy OCR text lives here, out of the main table)."""
+    with st.expander("🔎 Sources — the document span that proves each row"):
+        for r in source_lines:
+            span = (r.get("source") or "").strip()
+            if span:
+                st.markdown(f"**{r[label_key]}** · doc #{r.get('document_id')}  \n"
+                            f"<small>{span}</small>", unsafe_allow_html=True)
+
+
 def _entity_page(db, title, entity_type, active_pid, selected_label, empty_msg) -> None:
     st.title(title)
     _scope_caption(active_pid, selected_label)
     rows = bsvc.list_entity_links(db, entity_type, patient_id=active_pid)
-    if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
-        st.caption(f"{len(rows)} record(s). `source` is the span from the document that proves each entry.")
-    else:
+    if not rows:
         st.info(empty_msg)
+        return
+    cols = ["name", "confidence", "doc_type", "date"]
+    if active_pid is None:
+        cols.insert(1, "patient")
+    st.dataframe([{c: r.get(c) for c in cols} for r in rows],
+                 use_container_width=True, hide_index=True)
+    st.caption(f"{len(rows)} record(s).")
+    _provenance_expander(rows, "name", rows)
 
 
 def diagnostics_page(db, active_pid, selected_label) -> None:
     st.title("🧪 Diagnostics")
     _scope_caption(active_pid, selected_label)
     rows = bsvc.list_test_results(db, patient_id=active_pid)
-    if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
-        st.caption(f"{len(rows)} test result(s). `source` proves each value.")
-    else:
+    if not rows:
         st.info("No test results yet. Upload a lab report in **Chat**.")
+        return
+    cols = ["test", "value", "unit", "reference_range", "date"]
+    if active_pid is None:
+        cols.insert(1, "patient")
+    st.dataframe([{c: r.get(c) for c in cols} for r in rows],
+                 use_container_width=True, hide_index=True)
+    st.caption(f"{len(rows)} test result(s).")
+    _provenance_expander(rows, "test", rows)
 
 
 def documents_page(db, active_pid, selected_label) -> None:
@@ -160,51 +181,87 @@ def _drive(graph, cfg, payload) -> None:
     st.rerun()
 
 
+def _summarize_extracted(ex: dict) -> None:
+    """Compact, human-readable view of an ExtractionResult dict (no raw JSON)."""
+    meta = " · ".join(x for x in [ex.get("doc_type"), ex.get("doc_date"),
+                                  ex.get("doctor")] if x)
+    if meta:
+        st.caption(meta)
+    tests = ex.get("tests") or []
+    if tests:
+        st.markdown(f"**Test results ({len(tests)})**")
+        st.dataframe(
+            [{"test": t.get("name"), "value": t.get("value"), "unit": t.get("unit"),
+              "reference": t.get("reference_range")} for t in tests],
+            use_container_width=True, hide_index=True,
+        )
+    for key, label in [("diseases", "Diseases"), ("symptoms", "Symptoms"),
+                       ("medications", "Medications")]:
+        items = ex.get(key) or []
+        if items:
+            st.markdown(f"**{label}:** " + ", ".join(
+                i.get("name", "") for i in items if i.get("name")))
+
+
 def _render_interrupt(graph, cfg, payload) -> None:
     kind = payload.get("type")
     st.warning(f"⏸️ Needs your approval — {kind}")
 
-    if kind == "confirm_entities":
-        import json
-        st.caption("Review / edit the extracted data, then approve to save it.")
-        edited = st.text_area("Extracted entities (JSON)",
-                              value=json.dumps(payload["extracted"], indent=2, default=str),
-                              height=320)
-        c1, c2 = st.columns(2)
-        if c1.button("✅ Approve & save"):
+    if kind == "confirm_ingest":
+        ex = payload.get("extracted") or {}
+        pre_id = payload.get("patient_id")
+        cands = payload.get("candidates", [])
+
+        # --- Patient (single section) ---
+        st.subheader("🧑 Patient")
+        if pre_id:
+            st.success(f"Matched existing patient **{ex.get('patient_name') or ''}** (#{pre_id}). "
+                       "Saving under this profile.")
+            existing = str(pre_id)
+        else:
+            if cands:
+                st.write("Possible existing matches:",
+                         ", ".join(f"{c['name']} (#{c['id']})" for c in cands))
+                existing = st.text_input("Use an existing patient id (blank = create new)")
+            else:
+                st.caption("New patient — a profile will be created from the fields below.")
+                existing = ""
+            c1, c2, c3 = st.columns(3)
+            name = c1.text_input("Name", value=ex.get("patient_name") or "")
+            age = c2.number_input("Age", min_value=0, max_value=130,
+                                  value=int(ex.get("patient_age") or 0))
+            gender = c3.text_input("Gender", value=ex.get("patient_gender") or "")
+
+        # --- Extracted data (compact summary, not raw JSON) ---
+        st.subheader("📋 Extracted data")
+        _summarize_extracted(ex)
+        with st.expander("Edit raw JSON (advanced)"):
+            import json
+            edited = st.text_area("Entities (JSON)",
+                                  value=json.dumps(ex, indent=2, default=str), height=240)
+
+        a1, a2 = st.columns(2)
+        if a1.button("✅ Approve & save", type="primary"):
+            import json
             try:
                 data = json.loads(edited)
             except json.JSONDecodeError as e:
                 st.error(f"Invalid JSON: {e}")
                 return
+            resume = {"approved": True, "extracted": data}
+            if pre_id:
+                resume["patient_id"] = int(pre_id)
+            elif existing.strip():
+                resume["patient_id"] = int(existing)
+            else:
+                resume.update({"name": name.strip() or None,
+                               "age": int(age) or None,
+                               "gender": gender.strip() or None})
             st.session_state.pending_interrupt = None
-            _drive(graph, cfg, Command(resume={"approved": True, "extracted": data}))
-        if c2.button("❌ Reject"):
+            _drive(graph, cfg, Command(resume=resume))
+        if a2.button("❌ Reject"):
             st.session_state.pending_interrupt = None
             _drive(graph, cfg, Command(resume={"approved": False}))
-
-    elif kind == "confirm_patient":
-        st.write(f"Patient parsed from the document: **{payload.get('extracted_name') or '— none found —'}**")
-        cands = payload.get("candidates", [])
-        existing = ""
-        if cands:
-            st.write("Possible existing matches:", cands)
-            existing = st.text_input("Use an existing patient id (leave blank to create a new profile)")
-        else:
-            st.info("No existing patient matched — confirm a new profile below.")
-        st.markdown("**New profile**")
-        name = st.text_input("Name", value=payload.get("extracted_name") or "")
-        age = st.number_input("Age", min_value=0, max_value=130,
-                              value=int(payload.get("extracted_age") or 0))
-        gender = st.text_input("Gender", value=payload.get("extracted_gender") or "")
-        if st.button("Confirm patient"):
-            st.session_state.pending_interrupt = None
-            if existing.strip():
-                _drive(graph, cfg, Command(resume={"patient_id": int(existing)}))
-            else:
-                _drive(graph, cfg, Command(resume={
-                    "create_new": True, "name": name.strip() or None,
-                    "age": int(age) or None, "gender": gender.strip() or None}))
 
     elif kind == "low_confidence":
         st.write(f"Weak retrieval (score {payload.get('score')}). Answer anyway?")
