@@ -8,6 +8,8 @@ from langgraph.types import interrupt
 
 from app import storage
 from app.agent.state import ExtractionResult
+from app.cache import get_or_set, make_key
+from app.config import get_settings
 from app.services.chunking import chunk_and_embed, make_semantic_chunks
 from app.services.documents import create_document, get_document, set_file_path
 from app.services.entities import persist_extraction
@@ -25,18 +27,28 @@ Document:
 
 
 def extract_text_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    deps = config["configurable"]["deps"]
+    cfg = config["configurable"]
+    deps = cfg["deps"]
     data = Path(state["file_path"]).read_bytes()
-    text = extract_text(data, mime_type=state["mime_type"], vision=deps.vision)
+    text = extract_text(data, mime_type=state["mime_type"], vision=deps.vision,
+                        progress=cfg.get("progress"))
     return {"ocr_text": text}
 
 
 def extract_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     deps = config["configurable"]["deps"]
-    result = deps.chat.structured(
-        _EXTRACT_PROMPT.format(text=state["ocr_text"]), ExtractionResult
+    text = state["ocr_text"]
+
+    # Cache the structured extraction by (model, document text): re-ingesting the
+    # same document skips the slow LLM call. Stored as the model_dump() dict.
+    key = make_key(f"extract:{get_settings().ollama_model}", text)
+    extracted = get_or_set(
+        key,
+        lambda: deps.chat.structured(
+            _EXTRACT_PROMPT.format(text=text), ExtractionResult
+        ).model_dump(),
     )
-    return {"extracted": result.model_dump()}
+    return {"extracted": extracted}
 
 
 def confirm_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:

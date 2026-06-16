@@ -19,7 +19,7 @@ class GeminiChat:
         if inner is None:
             from langchain_google_genai import ChatGoogleGenerativeAI
             s = get_settings()
-            inner = ChatGoogleGenerativeAI(model=s.gemini_model,
+            inner = ChatGoogleGenerativeAI(model=s.gemini_model, max_retries=0,
                                            google_api_key=s.gemini_api_key, temperature=0)
         self._inner = inner
 
@@ -35,7 +35,7 @@ class GeminiVision:
         if inner is None:
             from langchain_google_genai import ChatGoogleGenerativeAI
             s = get_settings()
-            inner = ChatGoogleGenerativeAI(model=s.gemini_vision_model,
+            inner = ChatGoogleGenerativeAI(model=s.gemini_vision_model, max_retries=0,
                                            google_api_key=s.gemini_api_key, temperature=0)
         self._inner = inner
 
@@ -81,6 +81,47 @@ class OllamaChat:
 
     def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
         return self._inner.with_structured_output(schema).invoke(prompt)
+
+
+class TesseractVision:
+    """CPU OCR via Tesseract — no GPU/RAM cost, strong on printed lab reports.
+
+    Needs the system binary (`apt install tesseract-ocr`) + pytesseract. If either
+    is missing, ocr_image raises and FallbackVision advances to the next provider.
+    """
+
+    def ocr_image(self, data: bytes, mime: str) -> str:
+        import io
+
+        import pytesseract
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(data))
+        return pytesseract.image_to_string(img).strip()
+
+
+class OllamaVision:
+    """Local OCR fallback via an Ollama vision model (e.g. llama3.2-vision).
+    Requires `ollama pull <ollama_vision_model>`; only hit if cloud vision fails."""
+
+    def __init__(self, inner=None):
+        if inner is None:
+            from langchain_ollama import ChatOllama
+            s = get_settings()
+            inner = ChatOllama(model=s.ollama_vision_model, base_url=s.ollama_host, temperature=0)
+        self._inner = inner
+
+    def ocr_image(self, data: bytes, mime: str) -> str:
+        import base64
+        b64 = base64.b64encode(data).decode()
+        msg = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Transcribe ALL text in this medical document verbatim. Output only the text."},
+                {"type": "image_url", "image_url": f"data:{mime};base64,{b64}"},
+            ],
+        }]
+        return self._inner.invoke(msg).content
 
 
 # ---- Fallback wrappers ----
@@ -149,17 +190,23 @@ def _has_gemini() -> bool:
 
 
 def build_deps(session_factory: Any):
-    """Construct production Deps with the Gemini->Groq->Ollama fallback chain."""
+    """Construct production Deps.
+
+    ai_provider="ollama" (default): local-only, no cloud calls.
+    ai_provider="fallback": Gemini->Groq->Ollama chat chain (cloud first).
+    OCR is always Tesseract (CPU) — no vision models.
+    """
     s = get_settings()
     chats = []
-    visions = []
-    if _has_gemini():
-        chats.append(GeminiChat())
-        visions.append(GeminiVision())
-    if s.groq_api_key:
-        chats.append(GroqChat())
-        visions.append(GroqVision())
+    if s.ai_provider == "fallback":
+        if _has_gemini():
+            chats.append(GeminiChat())
+        if s.groq_api_key:
+            chats.append(GroqChat())
     chats.append(OllamaChat())
+
+    # OCR is Tesseract only — no vision models (CPU, ~0 RAM, deterministic).
+    visions = [TesseractVision()]
 
     # Embeddings are pinned to a single provider (Ollama nomic-embed-text, 768-dim):
     # mixing embedding providers corrupts the shared pgvector space, and current

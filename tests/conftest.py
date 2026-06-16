@@ -17,6 +17,14 @@ def _schema():
 
 
 @pytest.fixture(autouse=True)
+def _disable_cache(monkeypatch):
+    # Force cache misses so tests never read a real Redis (deterministic, and
+    # they don't depend on / pollute a running server).
+    monkeypatch.setattr("app.cache._client", lambda: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _clean_patients():
     db = SessionLocal()
     try:

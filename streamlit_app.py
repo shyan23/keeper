@@ -132,11 +132,16 @@ def _drive(graph, cfg, payload) -> None:
     interrupt_val = None
     try:
         with st.status("Working…", expanded=True) as status:
+            # Sub-line updated live by long nodes (per-page OCR) via the progress
+            # callback; Streamlit flushes placeholder writes mid-node (same thread).
+            detail = st.empty()
+            cfg["configurable"]["progress"] = lambda msg: detail.write(f"   ↳ {msg}")
             for chunk in graph.stream(payload, cfg, stream_mode="updates"):
                 for node in chunk:
                     if node == "__interrupt__":
                         interrupt_val = chunk["__interrupt__"][0].value
                         continue
+                    detail.empty()
                     status.write(_NODE_LABELS.get(node, f"… {node}"))
             status.update(
                 label="⏸️ Paused for your approval" if interrupt_val else "✅ Done",
@@ -237,24 +242,37 @@ def chat_page(db, patients, label_to_id, active_pid) -> None:
     for m in st.session_state.chat_log:
         st.chat_message(m["role"]).write(m["content"])
 
-    up = st.file_uploader("Attach a document (optional)",
+    up = st.file_uploader("Attach a document — I start reading it automatically",
                           type=["png", "jpg", "jpeg", "pdf", "webp", "txt"])
-    prompt = st.chat_input("Ask, or upload + “read this and arrange it”")
+    prompt = st.chat_input("Ask a question, or attach a document above")
+
+    # Auto-start: the moment a NEW file is attached, kick off ingest without making
+    # the user type. The agent OCRs, extracts the name, and arranges it (HITL gates
+    # still pause for verification). Re-runs skip an already-processed file.
+    if up is not None:
+        sig = (up.name, up.size)
+        if st.session_state.get("last_upload_sig") != sig:
+            st.session_state.last_upload_sig = sig
+            import app.storage as storage
+            ext = _ext(up.name)
+            mime = up.type or ("application/pdf" if ext == "pdf"
+                               else "text/plain" if ext == "txt" else f"image/{ext}")
+            staged = storage.save_staging(ext, up.getvalue())
+            state = {
+                "messages": st.session_state.chat_log + [
+                    {"role": "user", "content": prompt or "Read this and arrange it."}],
+                "file_path": staged, "mime_type": mime, "file_ext": ext,
+                "source_type": "pdf" if ext == "pdf" else "image",
+            }
+            _drive(graph, cfg, state)
+            return
+
     if not prompt:
         return
 
+    # Text-only question: scope to the active patient.
     state = {"messages": st.session_state.chat_log + [{"role": "user", "content": prompt}]}
-
-    if up is not None:
-        # Stage the file patient-less; the agent extracts the name and creates/
-        # matches the profile, then files the document under it. No pre-pick needed.
-        import app.storage as storage
-        ext = _ext(up.name)
-        staged = storage.save_staging(ext, up.getvalue())
-        state.update({"file_path": staged, "mime_type": up.type, "file_ext": ext,
-                      "source_type": "pdf" if ext == "pdf" else "image"})
-    elif active_pid is not None:
-        # Questions (no upload) are scoped to the active patient.
+    if active_pid is not None:
         state["patient_id"] = active_pid
     else:
         st.warning("Pick an active patient in the sidebar to ask about their records, "
