@@ -11,6 +11,7 @@ import streamlit as st
 from langgraph.types import Command
 
 from app.db import SessionLocal
+from app.services import browse as bsvc
 from app.services import documents as dsvc
 from app.services import health as hsvc
 from app.services import patients as psvc
@@ -24,78 +25,65 @@ def _ext(filename: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Dashboard view
+# Browse views (read-only organization pages). Upload lives in Chat.
 # --------------------------------------------------------------------------- #
 
-def dashboard(db, patients, label_to_id, active_pid, selected_label) -> None:
-    st.title("🩺 Medical Document Tracker")
-
-    health = hsvc.check_health()
-    if health["db"] == "ok" and health["pgvector"]:
-        st.caption(f"DB ok · pgvector ready · v{health['version']}")
+def _scope_caption(active_pid, selected_label) -> None:
+    if active_pid is not None:
+        st.caption(f"Showing **{selected_label}** only — change in the sidebar.")
     else:
-        st.error(f"Backend not ready: {health}")
+        st.caption("Showing **all patients** — pick one in the sidebar to filter.")
 
+
+def patients_page(db, patients, active_pid) -> None:
+    st.title("🧑 Patients")
     c1, c2 = st.columns(2)
     c1.metric("Patients", len(patients))
     c2.metric("Documents", dsvc.count_documents(db, patient_id=active_pid))
-
-    st.subheader("Profiles")
     if patients:
         st.dataframe(
             [
-                {"id": p.id, "name": p.name, "age": p.age,
-                 "gender": p.gender, "relationship": p.relationship,
+                {"id": p.id, "name": p.name, "age": p.age, "gender": p.gender,
+                 "relationship": p.relationship,
                  "documents": dsvc.count_documents(db, patient_id=p.id)}
                 for p in patients
             ],
             use_container_width=True, hide_index=True,
         )
     else:
-        st.info("No patients yet. Add one in the sidebar.")
+        st.info("No patients yet. Add one in the sidebar, then upload a document in **Chat**.")
 
-    st.subheader("Documents" + (f" — {selected_label}" if active_pid else ""))
-    docs = dsvc.list_documents(db, patient_id=active_pid)
-    if docs:
-        st.dataframe(
-            [
-                {"id": d.id, "patient_id": d.patient_id, "type": d.doc_type,
-                 "status": d.status, "file": d.file_path,
-                 "uploaded": d.uploaded_at.strftime("%Y-%m-%d %H:%M") if d.uploaded_at else None}
-                for d in docs
-            ],
-            use_container_width=True, hide_index=True,
-        )
-    else:
-        st.info("No documents yet.")
 
-    st.subheader("📤 Upload document")
-    st.caption("This only **stores** the file. For OCR + entity extraction + arranging, "
-               "use the **Chat** view (sidebar) and say “read this and arrange it”.")
-    if patients:
-        up_label = st.selectbox("For patient", list(label_to_id), key="upload_patient")
-        up_pid = label_to_id[up_label]
+def _entity_page(db, title, entity_type, active_pid, selected_label, empty_msg) -> None:
+    st.title(title)
+    _scope_caption(active_pid, selected_label)
+    rows = bsvc.list_entity_links(db, entity_type, patient_id=active_pid)
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.caption(f"{len(rows)} record(s). `source` is the span from the document that proves each entry.")
     else:
-        st.caption("No patients yet — add one in the sidebar to attach this upload.")
-        up_pid = None
-    doc_type = st.selectbox(
-        "Type", ["prescription", "lab_report", "diagnostic_report",
-                 "discharge_summary", "other"],
-    )
-    uploaded = st.file_uploader("File (image or PDF)",
-                                type=["png", "jpg", "jpeg", "pdf", "webp"])
-    if st.button("Save upload", disabled=(uploaded is None or up_pid is None)):
-        data = uploaded.getvalue()
-        doc = dsvc.create_document(
-            db, patient_id=up_pid, doc_type=doc_type,
-            source_type="pdf" if _ext(uploaded.name) == "pdf" else "image",
-            mime_type=uploaded.type,
-        )
-        import app.storage as storage
-        path = storage.save_bytes(up_pid, doc.id, _ext(uploaded.name), data)
-        dsvc.set_file_path(db, doc.id, path)
-        st.success(f"Saved {uploaded.name} → {path} (doc #{doc.id})")
-        st.rerun()
+        st.info(empty_msg)
+
+
+def diagnostics_page(db, active_pid, selected_label) -> None:
+    st.title("🧪 Diagnostics")
+    _scope_caption(active_pid, selected_label)
+    rows = bsvc.list_test_results(db, patient_id=active_pid)
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.caption(f"{len(rows)} test result(s). `source` proves each value.")
+    else:
+        st.info("No test results yet. Upload a lab report in **Chat**.")
+
+
+def documents_page(db, active_pid, selected_label) -> None:
+    st.title("📅 Documents")
+    _scope_caption(active_pid, selected_label)
+    rows = bsvc.list_documents_timeline(db, patient_id=active_pid)
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("No documents yet. Upload one in **Chat**.")
 
 
 # --------------------------------------------------------------------------- #
@@ -278,7 +266,17 @@ def main() -> None:
         label_to_id = {f"{p.name} (#{p.id})": p.id for p in patients}
 
         with st.sidebar:
-            view = st.radio("View", ["Dashboard", "Chat"])
+            view = st.radio(
+                "View",
+                ["Chat", "Patients", "Diseases", "Symptoms", "Medications",
+                 "Diagnostics", "Documents"],
+            )
+            health = hsvc.check_health()
+            if health["db"] == "ok" and health["pgvector"]:
+                st.caption(f"DB ok · pgvector ready · v{health['version']}")
+            else:
+                st.error(f"Backend not ready: {health}")
+
             st.header("Patients")
             selected_label = st.selectbox("Active patient", ["— all —"] + list(label_to_id))
             active_pid = label_to_id.get(selected_label)
@@ -299,8 +297,21 @@ def main() -> None:
 
         if view == "Chat":
             chat_page(db, patients, label_to_id, active_pid)
-        else:
-            dashboard(db, patients, label_to_id, active_pid, selected_label)
+        elif view == "Patients":
+            patients_page(db, patients, active_pid)
+        elif view == "Diseases":
+            _entity_page(db, "🦠 Diseases", "disease", active_pid, selected_label,
+                         "No diseases extracted yet. Upload a document in Chat.")
+        elif view == "Symptoms":
+            _entity_page(db, "🤒 Symptoms", "symptom", active_pid, selected_label,
+                         "No symptoms extracted yet. Upload a document in Chat.")
+        elif view == "Medications":
+            _entity_page(db, "💊 Medications", "medication", active_pid, selected_label,
+                         "No medications extracted yet. Upload a document in Chat.")
+        elif view == "Diagnostics":
+            diagnostics_page(db, active_pid, selected_label)
+        elif view == "Documents":
+            documents_page(db, active_pid, selected_label)
     finally:
         db.close()
 
