@@ -7,7 +7,8 @@ from app.agent.router import classify_intent
 from app.agent.state import AgentState
 from app.agent.nodes.ingest import (
     chunk_embed_node, confirm_entities_node, confirm_patient_node,
-    extract_entities_node, extract_text_node, persist_node, resolve_patient_node,
+    create_document_node, extract_entities_node, extract_text_node, persist_node,
+    resolve_patient_node,
 )
 from app.agent.nodes.structured import parse_filters_node, query_db_node
 from app.agent.nodes.rag import (
@@ -40,6 +41,7 @@ def build_graph(checkpointer=None):
     g.add_node("confirm_entities", confirm_entities_node)
     g.add_node("resolve_patient", resolve_patient_node)
     g.add_node("confirm_patient", confirm_patient_node)
+    g.add_node("create_document", create_document_node)
     g.add_node("persist", persist_node)
     g.add_node("chunk_embed", chunk_embed_node)
     # structured
@@ -68,7 +70,8 @@ def build_graph(checkpointer=None):
         "rejected": END, "resolve_patient": "resolve_patient",
     })
     g.add_edge("resolve_patient", "confirm_patient")
-    g.add_edge("confirm_patient", "persist")
+    g.add_edge("confirm_patient", "create_document")
+    g.add_edge("create_document", "persist")
     g.add_edge("persist", "chunk_embed")
     g.add_edge("chunk_embed", END)
 

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 from langgraph.types import interrupt
 
+from app import storage
 from app.agent.state import ExtractionResult
 from app.services.chunking import chunk_and_embed, make_semantic_chunks
-from app.services.documents import get_document
+from app.services.documents import create_document, get_document, set_file_path
 from app.services.entities import persist_extraction
 from app.services.extraction import extract_text
+from app.services.patients import create_patient
 from app.models import Patient
 
 
@@ -62,22 +65,58 @@ def resolve_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
 
 
 def confirm_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """HITL gate (only reached when patient ambiguous): pick existing id or create new."""
+    """HITL gate (reached when patient is new/ambiguous): pick an existing patient
+    or create a new profile from the extracted name/age/gender (human-verified)."""
     if state.get("patient_id"):
         return {}
     deps = config["configurable"]["deps"]
+    ex = state.get("extracted") or {}
     decision = interrupt({
         "type": "confirm_patient",
         "candidates": state.get("patient_candidates", []),
-        "extracted_name": (state.get("extracted") or {}).get("patient_name"),
+        "extracted_name": ex.get("patient_name"),
+        "extracted_age": ex.get("patient_age"),
+        "extracted_gender": ex.get("patient_gender"),
     })
     pid = decision.get("patient_id")
     if pid is None and decision.get("create_new"):
-        from app.services.patients import create_patient
         with deps.session_factory() as s:
-            p = create_patient(s, name=(state.get("extracted") or {}).get("patient_name") or "Unknown")
+            p = create_patient(
+                s,
+                name=decision.get("name") or ex.get("patient_name") or "Unknown",
+                age=decision.get("age", ex.get("patient_age")),
+                gender=decision.get("gender") or ex.get("patient_gender"),
+            )
             pid = p.id
     return {"patient_id": pid}
+
+
+def create_document_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Create the document row now that the patient is known, then move the staged
+    file into the patient-scoped path. (Document creation is deferred to here so the
+    agent — not the user — determines the patient.)"""
+    deps = config["configurable"]["deps"]
+    if state.get("document_id"):
+        return {}  # document already exists (e.g. re-ingest of an existing doc)
+    ex = state.get("extracted") or {}
+    ext = state.get("file_ext") or "bin"
+    staged = state.get("file_path")
+    with deps.session_factory() as s:
+        doc = create_document(
+            s, patient_id=state["patient_id"], doc_type=ex.get("doc_type"),
+            source_type=state.get("source_type"), mime_type=state.get("mime_type"),
+        )
+        doc_id = doc.id
+        final_path = staged
+        if staged and os.path.exists(staged):
+            data = Path(staged).read_bytes()
+            final_path = storage.save_bytes(state["patient_id"], doc_id, ext, data)
+            set_file_path(s, doc_id, final_path)
+            try:
+                os.remove(staged)
+            except OSError:
+                pass
+    return {"document_id": doc_id, "file_path": final_path}
 
 
 def persist_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -85,8 +124,9 @@ def persist_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any
     result = ExtractionResult(**state["extracted"])
     with deps.session_factory() as s:
         n = persist_extraction(s, document_id=state["document_id"], result=result)
+    pname = (state.get("extracted") or {}).get("patient_name") or "patient"
     return {"messages": state["messages"] + [
-        {"role": "assistant", "content": f"Saved {n} entities for this document."}
+        {"role": "assistant", "content": f"Saved {n} entities for {pname}."}
     ]}
 
 

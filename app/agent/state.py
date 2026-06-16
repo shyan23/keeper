@@ -70,7 +70,9 @@ class AgentState(TypedDict, total=False):
     # ingest
     document_id: int | None
     file_path: str | None
+    file_ext: str | None
     mime_type: str | None
+    source_type: str | None
     ocr_text: str | None
     extracted: dict[str, Any] | None      # ExtractionResult.model_dump()
     patient_id: int | None

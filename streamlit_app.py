@@ -179,16 +179,27 @@ def _render_interrupt(graph, cfg, payload) -> None:
             _drive(graph, cfg, Command(resume={"approved": False}))
 
     elif kind == "confirm_patient":
-        st.write(f"Document name: **{payload.get('extracted_name')}**")
+        st.write(f"Patient parsed from the document: **{payload.get('extracted_name') or '— none found —'}**")
         cands = payload.get("candidates", [])
-        st.write("Candidates:", cands or "— none —")
-        choice = st.text_input("Existing patient id (leave blank to create new)")
+        existing = ""
+        if cands:
+            st.write("Possible existing matches:", cands)
+            existing = st.text_input("Use an existing patient id (leave blank to create a new profile)")
+        else:
+            st.info("No existing patient matched — confirm a new profile below.")
+        st.markdown("**New profile**")
+        name = st.text_input("Name", value=payload.get("extracted_name") or "")
+        age = st.number_input("Age", min_value=0, max_value=130,
+                              value=int(payload.get("extracted_age") or 0))
+        gender = st.text_input("Gender", value=payload.get("extracted_gender") or "")
         if st.button("Confirm patient"):
             st.session_state.pending_interrupt = None
-            if choice.strip():
-                _drive(graph, cfg, Command(resume={"patient_id": int(choice)}))
+            if existing.strip():
+                _drive(graph, cfg, Command(resume={"patient_id": int(existing)}))
             else:
-                _drive(graph, cfg, Command(resume={"create_new": True}))
+                _drive(graph, cfg, Command(resume={
+                    "create_new": True, "name": name.strip() or None,
+                    "age": int(age) or None, "gender": gender.strip() or None}))
 
     elif kind == "low_confidence":
         st.write(f"Weak retrieval (score {payload.get('score')}). Answer anyway?")
@@ -235,22 +246,20 @@ def chat_page(db, patients, label_to_id, active_pid) -> None:
     state = {"messages": st.session_state.chat_log + [{"role": "user", "content": prompt}]}
 
     if up is not None:
-        if active_pid is None:
-            st.error("Pick an active patient in the sidebar before uploading a document.")
-            return
-        data = up.getvalue()
-        doc = dsvc.create_document(
-            db, patient_id=active_pid,
-            source_type="pdf" if _ext(up.name) == "pdf" else "image",
-            mime_type=up.type,
-        )
+        # Stage the file patient-less; the agent extracts the name and creates/
+        # matches the profile, then files the document under it. No pre-pick needed.
         import app.storage as storage
-        path = storage.save_bytes(active_pid, doc.id, _ext(up.name), data)
-        dsvc.set_file_path(db, doc.id, path)
-        state.update({"file_path": path, "mime_type": up.type, "document_id": doc.id})
+        ext = _ext(up.name)
+        staged = storage.save_staging(ext, up.getvalue())
+        state.update({"file_path": staged, "mime_type": up.type, "file_ext": ext,
+                      "source_type": "pdf" if ext == "pdf" else "image"})
     elif active_pid is not None:
-        # RAG / structured queries are scoped to the active patient.
+        # Questions (no upload) are scoped to the active patient.
         state["patient_id"] = active_pid
+    else:
+        st.warning("Pick an active patient in the sidebar to ask about their records, "
+                   "or attach a document for me to read and arrange.")
+        return
 
     _drive(graph, cfg, state)
 
