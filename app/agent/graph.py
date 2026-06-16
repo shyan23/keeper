@@ -11,7 +11,8 @@ from app.agent.nodes.ingest import (
 )
 from app.agent.nodes.structured import parse_filters_node, query_db_node
 from app.agent.nodes.rag import (
-    confirm_low_confidence_node, generate_answer_node, grade_node, retrieve_node,
+    confirm_low_confidence_node, correct_query_node, generate_answer_node,
+    grade_node, rerank_node, retrieve_node, transform_query_node,
 )
 
 
@@ -21,6 +22,12 @@ def _route(state: AgentState) -> str:
 
 def _after_confirm_entities(state: AgentState) -> str:
     return "rejected" if state.get("intent") == "rejected" else "resolve_patient"
+
+
+def _crag_route(state: AgentState) -> str:
+    if state.get("low_confidence") and not state.get("corrected"):
+        return "correct"
+    return "proceed"
 
 
 def build_graph(checkpointer=None):
@@ -39,8 +46,11 @@ def build_graph(checkpointer=None):
     g.add_node("parse_filters", parse_filters_node)
     g.add_node("query_db", query_db_node)
     # rag
+    g.add_node("transform_query", transform_query_node)
     g.add_node("retrieve", retrieve_node)
+    g.add_node("rerank", rerank_node)
     g.add_node("grade", grade_node)
+    g.add_node("correct_query", correct_query_node)
     g.add_node("confirm_low_confidence", confirm_low_confidence_node)
     g.add_node("generate_answer", generate_answer_node)
 
@@ -48,7 +58,7 @@ def build_graph(checkpointer=None):
     g.add_conditional_edges("router", _route, {
         "ingest": "extract_text",
         "structured_query": "parse_filters",
-        "rag_query": "retrieve",
+        "rag_query": "transform_query",
     })
 
     # ingest chain
@@ -66,9 +76,15 @@ def build_graph(checkpointer=None):
     g.add_edge("parse_filters", "query_db")
     g.add_edge("query_db", END)
 
-    # rag chain
-    g.add_edge("retrieve", "grade")
-    g.add_edge("grade", "confirm_low_confidence")
+    # rag chain (HyDE -> retrieve -> rerank -> grade -> [CRAG correct loop] -> HITL -> answer)
+    g.add_edge("transform_query", "retrieve")
+    g.add_edge("retrieve", "rerank")
+    g.add_edge("rerank", "grade")
+    g.add_conditional_edges("grade", _crag_route, {
+        "correct": "correct_query",
+        "proceed": "confirm_low_confidence",
+    })
+    g.add_edge("correct_query", "retrieve")
     g.add_edge("confirm_low_confidence", "generate_answer")
     g.add_edge("generate_answer", END)
 

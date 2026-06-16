@@ -80,3 +80,7 @@ class AgentState(TypedDict, total=False):
     retrieved: list[dict[str, Any]]
     answer: str | None
     citations: list[dict[str, Any]]
+    retrieval_query: str | None
+    corrected: bool
+    low_confidence: bool
+    grade_score: float
