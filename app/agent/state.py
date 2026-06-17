@@ -85,6 +85,7 @@ class AgentState(TypedDict, total=False):
     retrieved: list[dict[str, Any]]
     answer: str | None
     citations: list[dict[str, Any]]
+    sources: list[dict[str, Any]]         # per-document citations for the UI (no chunk ids)
     retrieval_query: str | None
     corrected: bool
     low_confidence: bool

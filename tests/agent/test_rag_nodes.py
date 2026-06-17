@@ -32,17 +32,26 @@ def test_grade_high_confidence_passes():
     assert out["low_confidence"] is False
 
 
-def test_generate_answer_includes_citations():
+def test_generate_answer_emits_doc_sources_not_chunk_ids():
     state = {
-        "messages": [{"role": "user", "content": "what is her hemoglobin?"}],
+        "messages": [{"role": "user", "content": "eosinophil?"}],
         "retrieved": [
-            {"chunk_id": 7, "text": "hemoglobin 13.5 g/dL", "doc_type": "lab_report", "uploaded_at": "2026-06-10"},
+            {"chunk_id": 50, "document_id": 7, "text": "Eosinophil 8%", "doc_type": "LAB REPORT",
+             "report_date": "2021-04-30", "original_name": "lab.pdf", "page_ref": "1"},
+            {"chunk_id": 46, "document_id": 7, "text": "more", "doc_type": "LAB REPORT",
+             "report_date": "2021-04-30", "original_name": "lab.pdf", "page_ref": "2"},
         ],
     }
-    out = generate_answer_node(state, _cfg(_FakeChat("Her hemoglobin is 13.5 g/dL")))
-    assert out["answer"]
-    assert out["citations"][0]["chunk_id"] == 7
-    assert "#7" in out["messages"][-1]["content"]
+    out = generate_answer_node(state, _cfg(_FakeChat("Eosinophil is 8%.")))
+    last = out["messages"][-1]
+    # no chunk ids, no glued raw-OCR "Sources:" block
+    assert "#50" not in last["content"] and "#46" not in last["content"]
+    assert "Sources:" not in last["content"]
+    # chunks of one document collapse into a single citation
+    assert len(out["sources"]) == 1
+    assert out["sources"][0]["document_id"] == 7
+    assert out["sources"][0]["date"] == "2021-04-30"
+    assert last["sources"] == out["sources"]
 
 
 def test_generate_answer_refuses_when_empty():

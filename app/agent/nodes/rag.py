@@ -116,19 +116,33 @@ def confirm_low_confidence_node(state: dict[str, Any], config: dict[str, Any]) -
     return {}
 
 
+def _collapse_sources(hits: list[dict]) -> list[dict]:
+    """One citation per document — chunks of the same document collapse into a single,
+    user-facing reference (document name/type/date), never chunk/vector ids."""
+    seen: dict[Any, dict] = {}
+    for h in hits:
+        did = h.get("document_id")
+        if did in seen:
+            continue
+        seen[did] = {
+            "document_id": did,
+            "name": h.get("original_name") or h.get("doc_type") or "Document",
+            "doc_type": h.get("doc_type") or "Document",
+            "date": h.get("report_date") or None,
+        }
+    return list(seen.values())
+
+
 def generate_answer_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     deps = config["configurable"]["deps"]
     hits = state.get("retrieved", [])
     if not hits:
-        msg = "I don't have relevant information in this patient's documents to answer that."
-        return {"answer": msg, "citations": [],
-                "messages": state["messages"] + [{"role": "assistant", "content": msg}]}
-    snips = "\n".join(f"[#{h['chunk_id']}] {h['text']}" for h in hits)
+        msg = "I don't have that information in this patient's records."
+        return {"answer": msg, "citations": [], "sources": [],
+                "messages": state["messages"] + [{"role": "assistant", "content": msg, "sources": []}]}
+    snips = "\n".join(f"[{i + 1}] {h['text']}" for i, h in enumerate(hits))
     body = deps.chat.complete(_ANSWER_PROMPT.format(q=_last_user_text(state), snips=snips))
-    cites = "\n".join(
-        f"  - #{h['chunk_id']} ({h.get('doc_type') or 'doc'}, {h.get('uploaded_at') or ''}): "
-        f"\"{h['text'][:120]}\"" for h in hits
-    )
-    full = f"{body}\n\nSources:\n{cites}"
-    return {"answer": body, "citations": hits,
-            "messages": state["messages"] + [{"role": "assistant", "content": full}]}
+    sources = _collapse_sources(hits)
+    return {"answer": body, "citations": hits, "sources": sources,
+            "messages": state["messages"] + [
+                {"role": "assistant", "content": body, "sources": sources}]}
