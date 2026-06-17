@@ -92,3 +92,62 @@ def test_sse_error_event():
     assert "event: error" in body
     assert "provider down" in body
     assert "event: done" in body
+
+
+import app.api.runtime as runtime_mod
+from fastapi.testclient import TestClient
+
+
+def test_upload_stages_file():
+    from app.api.server import app
+    client = TestClient(app)
+    r = client.post("/api/chat/upload",
+                    files={"file": ("scan.png", b"\x89PNG fake", "image/png")})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ext"] == "png"
+    assert body["mime"] == "image/png"
+    assert body["staged_path"].endswith(".png")
+
+
+def test_upload_rejects_unsupported_ext():
+    from app.api.server import app
+    client = TestClient(app)
+    r = client.post("/api/chat/upload",
+                    files={"file": ("x.exe", b"MZ", "application/octet-stream")})
+    assert r.status_code == 400
+
+
+def test_stream_text_requires_patient():
+    from app.api.server import app
+    client = TestClient(app)
+    r = client.post("/api/chat/stream",
+                    json={"thread_id": "t-np", "message": "hello"})
+    assert r.status_code == 200
+    assert "event: error" in r.text
+    assert "pick a patient" in r.text.lower()
+
+
+def test_stream_runs_graph(monkeypatch):
+    from app.api import server
+    client = TestClient(server.app)
+
+    class S:
+        values = {"messages": [{"role": "assistant", "content": "Answer", "sources": []}]}
+
+    class G:
+        def stream(self, payload, cfg, stream_mode="updates"):
+            yield {"router": {}}
+            yield {"generate_answer": {}}
+        def get_state(self, cfg):
+            return S()
+
+    monkeypatch.setattr(runtime_mod, "get_graph", lambda: G())
+    monkeypatch.setattr(runtime_mod, "get_deps", lambda: {"fake": True})
+
+    r = client.post("/api/chat/stream",
+                    json={"thread_id": "t-ok", "message": "hi", "patient_id": 1})
+    assert r.status_code == 200
+    assert "event: message" in r.text
+    assert "Answer" in r.text
+    assert r.text.rstrip().endswith("event: done\ndata: {}")
