@@ -638,8 +638,15 @@ function streamHandlers(agent: ChatMsg) {
     onError: (message: string) => {
       agent.text = `⚠️ ${message}`; agent.live = false; renderMessages();
     },
-    onDone: async () => {
+    onDone: async (meta?: { patient_id?: number; document_id?: number }) => {
       agent.live = false; agent.stepper = false;
+      if (meta?.patient_id != null) {
+        // Ingest resolved/created a patient — refresh the cohort so the new
+        // patient shows up, then focus it so its records/docs render.
+        patients = await listPatients().catch(() => patients);
+        await selectPatient(String(meta.patient_id));
+        return;
+      }
       await loadPatientData();   // ingest may have added records/docs
       render();
     },

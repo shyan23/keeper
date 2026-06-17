@@ -93,5 +93,5 @@ export interface SseHandlers {
   onInterrupt?: (payload: any) => void;
   onMessage?: (msg: { role: string; content: string; sources?: CitationSource[] }) => void;
   onError?: (message: string) => void;
-  onDone?: () => void;
+  onDone?: (meta?: { patient_id?: number; document_id?: number }) => void;
 }

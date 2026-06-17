@@ -41,6 +41,8 @@ export async function uploadFile(file: File):
 
 // Read an SSE stream from a POST response and dispatch to handlers.
 async function readSse(res: Response, h: SseHandlers): Promise<void> {
+  const t0 = performance.now();
+  console.debug('[sse] stream opened', res.status);
   if (!res.ok || !res.body) {
     h.onError?.(`${res.status} ${res.statusText}`);
     h.onDone?.();
@@ -64,12 +66,13 @@ async function readSse(res: Response, h: SseHandlers): Promise<void> {
       }
       let parsed: any = {};
       try { parsed = data ? JSON.parse(data) : {}; } catch { parsed = {}; }
+      console.debug(`[sse +${((performance.now() - t0) / 1000).toFixed(2)}s] ${event}`, parsed);
       if (event === 'node') h.onNode?.(parsed.label);
       else if (event === 'progress') h.onProgress?.(parsed.msg);
       else if (event === 'interrupt') h.onInterrupt?.(parsed);
       else if (event === 'message') h.onMessage?.(parsed);
       else if (event === 'error') h.onError?.(parsed.message);
-      else if (event === 'done') h.onDone?.();
+      else if (event === 'done') h.onDone?.(parsed);
     }
   }
 }
