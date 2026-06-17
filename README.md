@@ -1,7 +1,7 @@
 # Medical Document Intelligence & Tracker
 
-Foundation sub-project: a Python service/data layer on Supabase(Postgres/pgvector).
-Runs locally. No UI yet.
+Python service/data layer on Supabase (Postgres/pgvector) + LangGraph agent.
+FastAPI backend, Vite/TypeScript dashboard. Runs locally.
 
 ## Setup
 
@@ -10,6 +10,20 @@ Runs locally. No UI yet.
 3. Copy `.env.example` to `.env`; set `DATABASE_URL` to your Supabase **session
    pooler** URL (IPv4: `postgresql+psycopg://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres`).
 4. `alembic upgrade head`
+
+## Run
+
+Backend (FastAPI, single worker — agent checkpointer is in-process memory):
+
+    uvicorn app.api.server:app --port 8000 --workers 1
+
+Frontend (Vite dev server on :3000):
+
+    cd medagentic-dashboard
+    npm install
+    npm run dev
+
+Set `VITE_API_BASE` in `medagentic-dashboard/.env` if API not on `http://localhost:8000`.
 
 ## Tests
 
