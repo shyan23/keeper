@@ -42,9 +42,6 @@ let mobileTab: 'dashboard' | 'knowledge' = 'dashboard';
 let panelTab: 'chat' | 'docs' = 'chat';
 let chats: ChatMsg[] = [];
 let stagedFileName = '';
-let docSearch = '';
-let docType = 'all';
-let docSort: 'newest' | 'oldest' | 'type' = 'newest';
 const expandedCards = new Set<string>();   // which document cards are expanded
 // Persistent thread for the chat conversation (multi-turn memory). Ingestion
 // gets a FRESH thread per file so stale state channels (document_id,
@@ -665,55 +662,8 @@ function renderDocs() {
       if (f) handleUpload(f);
     });
   }
-
-  const docsList = $('docs-list');
-  if (docsList) {
-    const types = ['all', ...Array.from(new Set(docs.map(d => d.type).filter(Boolean)))];
-    const view = docs.filter(d =>
-      (docType === 'all' || d.type === docType) &&
-      (!docSearch || d.name.toLowerCase().includes(docSearch.toLowerCase())));
-    view.sort((a, b) => {
-      if (docSort === 'type') return (a.type || '').localeCompare(b.type || '');
-      const ta = a.date ? new Date(a.date).getTime() : 0;
-      const tb = b.date ? new Date(b.date).getTime() : 0;
-      return docSort === 'newest' ? tb - ta : ta - tb;
-    });
-    const rows = view.map(d => `
-      <tr class="border-t border-[#F0EFEB] hover:bg-[#FAF9F5]">
-        <td class="py-2 px-3 text-[13px] font-semibold text-[#2E2C29] truncate max-w-[220px]" title="${esc(d.name)}">
-          <i data-lucide="file-text" class="w-3.5 h-3.5 inline text-[#C16D54] mr-1.5"></i>${esc(d.name)}</td>
-        <td class="py-2 px-3 text-[11px] uppercase tracking-wider text-[#A6A298] font-bold whitespace-nowrap">${esc(d.type)}</td>
-        <td class="py-2 px-3 text-[12px] text-[#59554D] whitespace-nowrap">${d.date ? esc(formatDate(d.date)) : '—'}</td>
-        <td class="py-2 px-3 text-right"><a href="${esc(docFileUrl(d.id))}" target="_blank" rel="noopener"
-          class="text-[11px] font-bold text-[#5D7B6F] hover:text-[#3f5b50]">Open</a></td>
-      </tr>`).join('');
-    docsList.innerHTML = `
-      <div class="flex flex-wrap gap-2 mb-3 items-center">
-        <input id="doc-search" value="${esc(docSearch)}" placeholder="Search documents…"
-          class="flex-1 min-w-[140px] bg-white border border-[#E0DDD5] rounded-lg px-3 py-1.5 text-xs outline-none focus:border-[#5D7B6F]" />
-        <select id="doc-type" class="bg-white border border-[#E0DDD5] rounded-lg px-2 py-1.5 text-xs">
-          ${types.map(t => `<option value="${esc(t)}" ${t === docType ? 'selected' : ''}>${t === 'all' ? 'All types' : esc(t)}</option>`).join('')}
-        </select>
-        <select id="doc-sort" class="bg-white border border-[#E0DDD5] rounded-lg px-2 py-1.5 text-xs">
-          <option value="newest" ${docSort === 'newest' ? 'selected' : ''}>Newest</option>
-          <option value="oldest" ${docSort === 'oldest' ? 'selected' : ''}>Oldest</option>
-          <option value="type" ${docSort === 'type' ? 'selected' : ''}>Type</option>
-        </select>
-      </div>
-      ${view.length ? `<div class="bg-white rounded-2xl border border-[#E0DDD5] overflow-hidden">
-        <table class="w-full text-left">
-          <thead><tr class="text-[10px] uppercase tracking-widest text-[#A6A298]">
-            <th class="py-1.5 px-3 font-bold">Document</th><th class="py-1.5 px-3 font-bold">Type</th>
-            <th class="py-1.5 px-3 font-bold">Date</th><th class="py-1.5 px-3 font-bold text-right">Action</th>
-          </tr></thead><tbody>${rows}</tbody></table></div>`
-        : `<div class="text-center py-12 text-[#A6A298] text-sm">No documents.</div>`}`;
-    const si = $('doc-search') as HTMLInputElement | null;
-    if (si) si.oninput = () => { docSearch = si.value; renderDocs(); if (typeof lucide !== 'undefined') lucide.createIcons(); si.focus(); };
-    const ts = $('doc-type') as HTMLSelectElement | null;
-    if (ts) ts.onchange = () => { docType = ts.value; renderDocs(); if (typeof lucide !== 'undefined') lucide.createIcons(); };
-    const so = $('doc-sort') as HTMLSelectElement | null;
-    if (so) so.onchange = () => { docSort = so.value as typeof docSort; renderDocs(); if (typeof lucide !== 'undefined') lucide.createIcons(); };
-  }
+  // The document list lives in the dashboard "All" tab now (document cards) —
+  // the knowledge panel only stages uploads, so no duplicate table here.
 }
 
 function renderMobileTabs() {
