@@ -25,6 +25,8 @@ _CORRECT_PROMPT = """A search for this question returned weak results. Rewrite i
 Question: {q}"""
 
 _ANSWER_PROMPT = """Answer the question USING ONLY the snippets. Do not use outside knowledge.
+Each snippet is tagged with its document type and report date; snippets are ordered newest first.
+If several snippets give the same measurement on different dates, answer with the MOST RECENT value (latest report date) and state that date. Only give an older value, multiple values, or a trend if the question asks about a specific date, period, history, or change over time.
 If the snippets don't contain the answer, say you don't have that information.
 Question: {q}
 Snippets:
@@ -36,6 +38,12 @@ def _last_user_text(state: dict[str, Any]) -> str:
         if m.get("role") == "user":
             return m.get("content", "")
     return ""
+
+
+def _hit_date(h: dict) -> str:
+    """Sort key for recency: report date if known, else upload time. ISO strings
+    sort lexicographically by time, and '' sorts last under reverse=True."""
+    return h.get("report_date") or h.get("uploaded_at") or ""
 
 
 def _to_score(raw: str) -> float:
@@ -155,7 +163,12 @@ def generate_answer_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
         msg = "I don't have that information in this patient's records."
         return {"answer": msg, "citations": [], "sources": [],
                 "messages": state["messages"] + [{"role": "assistant", "content": msg, "sources": []}]}
-    snips = "\n".join(f"[{i + 1}] {h['text']}" for i, h in enumerate(hits))
+    # Newest first so "what is the RBC?" answers from the latest report unless the
+    # user asked about a specific date/period (the prompt enforces that policy).
+    hits = sorted(hits, key=_hit_date, reverse=True)
+    snips = "\n".join(
+        f"[{i + 1}] ({h.get('doc_type') or 'document'}, {h.get('report_date') or 'undated'}) {h['text']}"
+        for i, h in enumerate(hits))
     body = deps.chat.complete(_ANSWER_PROMPT.format(q=_last_user_text(state), snips=snips))
     sources = _collapse_sources(hits)
     return {"answer": body, "citations": hits, "sources": sources,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
@@ -81,24 +82,41 @@ def extract_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict
     return {"extracted": extracted}
 
 
+# Honorifics / titles that should NOT distinguish two patients.
+_TITLE_TOKENS = {
+    "mr", "mrs", "ms", "miss", "mst", "master", "md", "dr", "prof", "professor",
+    "mister", "sir", "madam", "smt", "mr.", "mrs.", "dr.",
+}
+
+
+def _normalize_name(name: str | None) -> str:
+    """Lowercase, drop honorifics/titles and punctuation, collapse whitespace so
+    'MRS. NAFISA KABIR' and 'Nafisa Kabir' compare as the same person."""
+    n = re.sub(r"[.\,]", " ", (name or "").lower())
+    toks = [t for t in n.split() if t and t not in _TITLE_TOKENS]
+    return " ".join(toks)
+
+
 def resolve_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """Match the extracted name to existing patients. An exact (case-insensitive) single
-    match auto-resolves. A close-but-not-exact name becomes a candidate so the confirm gate
-    can ask 'same person as X?' — never silently creating a near-duplicate profile."""
+    """Match the extracted name to existing patients. A single normalized match
+    auto-resolves. A close-but-not-exact name (or an ambiguous tie) becomes a
+    candidate so the confirm gate can ask 'same person as X?' — never silently
+    creating a near-duplicate profile. Honorifics ('MRS.', 'Dr.') are ignored."""
     deps = config["configurable"]["deps"]
     name = (state.get("extracted") or {}).get("patient_name")
     if not name:
         return {"patient_id": None, "patient_candidates": []}
-    nlow = name.strip().lower()
+    nnorm = _normalize_name(name)
     with deps.session_factory() as s:
         all_p = s.query(Patient).all()
         exact = [{"id": p.id, "name": p.name} for p in all_p
-                 if p.name.strip().lower() == nlow]
+                 if _normalize_name(p.name) == nnorm]
         fuzzy = [{"id": p.id, "name": p.name} for p in all_p
-                 if p.name.strip().lower() != nlow
-                 and SequenceMatcher(None, nlow, p.name.strip().lower()).ratio() >= 0.85]
+                 if _normalize_name(p.name) != nnorm
+                 and SequenceMatcher(None, nnorm, _normalize_name(p.name)).ratio() >= 0.85]
     if len(exact) == 1:
         return {"patient_id": exact[0]["id"], "patient_candidates": []}
+    # 0 matches -> brand new; 2+ normalized matches -> ambiguous, let the human pick.
     return {"patient_id": None, "patient_candidates": exact + fuzzy}
 
 
