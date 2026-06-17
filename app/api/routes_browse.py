@@ -6,12 +6,15 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api import mapping
-from app.api.schemas import DocumentOut, HealthOut, PatientIn, PatientOut, RecordOut
+from app.api.schemas import (
+    DeleteRecordsIn, DocumentOut, HealthOut, PatientIn, PatientOut, RecordOut,
+)
 from app.db import SessionLocal
 from app.services import browse as bsvc
 from app.services import documents as dsvc
 from app.services import health as hsvc
 from app.services import patients as psvc
+from app.services import purge as pgsvc
 
 router = APIRouter(prefix="/api")
 
@@ -83,5 +86,15 @@ def patient_documents(patient_id: int) -> list[dict]:
                 pass
             out.append(mapping.document_to_out(row, size_str))
         return out
+    finally:
+        db.close()
+
+
+@router.post("/patients/{patient_id}/records/delete")
+def delete_records(patient_id: int, body: DeleteRecordsIn) -> dict:
+    db = SessionLocal()
+    try:
+        n = pgsvc.delete_documents(db, patient_id, body.document_ids)
+        return {"deleted": n}
     finally:
         db.close()

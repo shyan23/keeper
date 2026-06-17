@@ -63,3 +63,21 @@ def test_list_test_results_prefers_report_date():
         assert rows[0]["reference_range"] == "0-15"
     finally:
         db.close()
+
+
+def test_delete_records_endpoint():
+    from app.db import SessionLocal
+    from app.models import Document, Patient
+    db = SessionLocal()
+    try:
+        p = Patient(name="Del Endpoint Person")
+        db.add(p); db.flush()
+        doc = Document(patient_id=p.id, doc_type="lab")
+        db.add(doc); db.commit()
+        pid, did = p.id, doc.id
+    finally:
+        db.close()
+    r = client.post(f"/api/patients/{pid}/records/delete",
+                    json={"document_ids": [str(did)]})
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"] == 1
