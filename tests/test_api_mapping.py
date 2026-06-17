@@ -115,3 +115,12 @@ def test_merge_records_reference_range_wins():
     tr = mapping.merge_records("1", [], [], [], tests)[0]
     assert tr["value"] == "6.8"
     assert tr["reference"] == "4.0-6.0"
+
+
+def test_document_to_out_uses_report_date_and_name():
+    from app.api.mapping import document_to_out
+    row = {"id": 5, "type": "LAB REPORT", "report_date": "2021-04-30",
+           "date": "2026-06-17 08:51", "original_name": "Haematology.pdf", "file": "/x/5.pdf"}
+    out = document_to_out(row, "0.2 MB")
+    assert out["name"] == "Haematology.pdf"
+    assert out["date"] == "2021-04-30"

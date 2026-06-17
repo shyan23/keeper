@@ -91,11 +91,15 @@ def merge_records(patient_id: str, diseases: list[dict], symptoms: list[dict],
 
 def document_to_out(row: dict, size_str: str) -> dict:
     file_path = row.get("file") or ""
-    name = Path(file_path).name if file_path else f"document-{row.get('id')}"
+    name = (row.get("original_name")
+            or (Path(file_path).name if file_path else None)
+            or f"document-{row.get('id')}")
+    # Prefer the date printed on the report; fall back to upload time.
+    date = row.get("report_date") or row.get("date")
     return {
         "id": str(row.get("id")),
         "name": name,
-        "date": row.get("date"),
+        "date": date,
         "type": (row.get("type") or "FILE"),
         "size": size_str,
     }
