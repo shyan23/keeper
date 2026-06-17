@@ -289,7 +289,7 @@ function documentsTableHtml(list: ApiDocument[]): string {
       <span>Document</span><span>Type</span><span class="text-right">Date</span><span class="text-right">Actions</span>
     </div>`;
   const rows = list.map(d => {
-    const color = d.date ? dateColor(d.date) : '#A6A298';
+    const color = d.date ? dateColor(d.date) : '#e6bb4d';
     const url = docFileUrl(d.id);
     return `
       <div class="group grid grid-cols-[1fr_5.5rem_6rem_4.5rem] sm:grid-cols-[1fr_8rem_7rem_5rem] gap-3 items-center px-4 min-h-[44px] py-1.5 border-b border-[#F4F3EF] last:border-0 hover:bg-[#FAF9F5] transition-colors duration-150">
@@ -347,7 +347,7 @@ function entityTableHtml(type: string, view: ApiRecord[]): string {
 function entityRowHtml(type: string, g: DocGroup): string {
   const key = `${type}:${g.docId}`;
   const open = expandedCards.has(key);
-  const color = g.date ? dateColor(g.date) : '#A6A298';
+  const color = g.date ? dateColor(g.date) : '#edbf4a';
   const noun = TYPE_NOUN[type] || 'record';
   const title = g.doc?.name || (g.doc?.type ? `${g.doc.type}` : `${noun} record`);
   const dateLabel = g.date ? formatDate(g.date) : '—';
@@ -546,43 +546,74 @@ function renderMessages() {
 function interruptCardHtml(payload: any, idx: number) {
   if (payload.type === 'confirm_ingest') {
     const ex = payload.extracted || {};
-    const name = ex.patient_name || '';
-    const tests = ex.tests || [];
+    // Every detected report is editable. Fall back to a single segment from `extracted`.
+    const segs: any[] = (payload.segments && payload.segments.length)
+      ? payload.segments
+      : [{ name: ex.doc_type || 'Report', doc_type: ex.doc_type || 'document', date: ex.doc_date, extracted: ex }];
+    const patientName = ex.patient_name
+      || segs.map(s => s.extracted?.patient_name).find(Boolean) || '';
     const inp = (id: string, val: unknown, ph: string, cls = '') =>
-      `<input id="${id}" value="${esc(val ?? '')}" placeholder="${esc(ph)}" class="${cls} bg-white border border-[#DFDDDA] rounded-md px-2 py-1 text-[12px] text-[#2E2C29] outline-none focus:border-[#5D7B6F]" />`;
-    const testRows = tests.map((t: any, j: number) => `
+      `<input id="${id}" value="${esc(val ?? '')}" placeholder="${esc(ph)}" class="${cls} bg-white border border-[#DFDDDA] rounded-md px-2 py-1 text-[12px] text-[#2E2C29] outline-none focus:border-[#5D7B6F] transition-colors" />`;
+    const entityRows = (s: number, k: string, e: any) => (e[k] || []).map((it: any, j: number) =>
+      inp(`int-${k}-${idx}-${s}-${j}`, it.name, k, 'w-full')).join('');
+    const reportBlock = (seg: any, s: number) => {
+      const e = seg.extracted || {};
+      const tests = e.tests || [];
+      const testRows = tests.map((t: any, j: number) => `
         <div class="flex gap-1.5 items-center">
-          ${inp(`int-t-${idx}-${j}-n`, t.name, 'test', 'flex-[2]')}
-          ${inp(`int-t-${idx}-${j}-v`, t.value, 'value', 'flex-1')}
-          ${inp(`int-t-${idx}-${j}-u`, t.unit, 'unit', 'w-16')}
-          ${inp(`int-t-${idx}-${j}-r`, t.reference_range, 'ref', 'w-20')}
+          ${inp(`int-t-${idx}-${s}-${j}-n`, t.name, 'test', 'flex-[2]')}
+          ${inp(`int-t-${idx}-${s}-${j}-v`, t.value, 'value', 'flex-1')}
+          ${inp(`int-t-${idx}-${s}-${j}-u`, t.unit, 'unit', 'w-16')}
+          ${inp(`int-t-${idx}-${s}-${j}-r`, t.reference_range, 'ref', 'w-20')}
         </div>`).join('');
-    const nameRows = (k: string) => (ex[k] || []).map((it: any, j: number) =>
-      inp(`int-${k}-${idx}-${j}`, it.name, k, 'w-full')).join('');
+      const items = (e.tests?.length || 0) + (e.diseases?.length || 0)
+        + (e.symptoms?.length || 0) + (e.medications?.length || 0);
+      const open = s === 0;
+      const sect = (label: string, rows: string) => rows
+        ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">${label}</div><div class="space-y-1.5">${rows}</div></div>` : '';
+      return `
+        <div class="border border-[#E3E1DB] rounded-xl overflow-hidden bg-white/55">
+          <button type="button" data-act="rpt-toggle" data-target="rpt-body-${idx}-${s}"
+            class="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-white/80 transition-colors">
+            <i data-lucide="chevron-right" class="rpt-chev w-4 h-4 text-[#8C8982] transition-transform duration-200 ${open ? 'rotate-90' : ''}"></i>
+            <span class="text-[11px] font-bold text-[#2E2C29] truncate flex-1">${esc(seg.name || ('Report ' + (s + 1)))}</span>
+            <span class="text-[10px] text-[#A6A298] tabular-nums">${esc(seg.date || '—')}</span>
+            <span class="text-[10px] text-[#A6A298]">· ${items} items</span>
+          </button>
+          <div id="rpt-body-${idx}-${s}" class="px-3 pb-3 pt-1 space-y-2.5 ${open ? '' : 'hidden'}">
+            <div class="flex gap-2 items-center">
+              <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-12 shrink-0">Title</span>
+              ${inp(`int-rname-${idx}-${s}`, seg.name, 'report title', 'flex-1')}
+            </div>
+            <div class="flex gap-2 items-center">
+              <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-12 shrink-0">Date</span>
+              ${inp(`int-rdate-${idx}-${s}`, seg.date, 'YYYY-MM-DD', 'flex-1')}
+            </div>
+            ${sect('Tests', testRows)}
+            ${sect('Diseases', entityRows(s, 'diseases', e))}
+            ${sect('Symptoms', entityRows(s, 'symptoms', e))}
+            ${sect('Medications', entityRows(s, 'medications', e))}
+          </div>
+        </div>`;
+    };
     return `
       <div class="bg-gradient-to-br from-[#F5F4F0] to-[#E9E8E1] rounded-3xl p-5 md:p-6 shadow-lg border border-[#DEDCD6]">
         <div class="flex items-center gap-2 mb-3 text-[#C16D54]">
           <i data-lucide="user" class="w-3.5 h-3.5"></i>
           <span class="font-extrabold text-[9px] tracking-widest uppercase">Human in the loop — edit then confirm</span>
         </div>
-        <h3 class="text-xl font-light text-[#2E2C29] mb-4 tracking-tight">Verify &amp; Correct Extraction</h3>
-        <div class="space-y-3 mb-5">
-          <div class="flex gap-2 items-center">
-            <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-16">Patient</span>
-            ${inp(`int-name-${idx}`, name, 'patient name', 'flex-1')}
-          </div>
-          <div class="flex gap-2 items-center">
-            <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-16">Date</span>
-            ${inp(`int-date-${idx}`, ex.doc_date, 'YYYY-MM-DD', 'flex-1')}
-          </div>
-          ${tests.length ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">Tests</div><div class="space-y-1.5">${testRows}</div></div>` : ''}
-          ${(ex.diseases || []).length ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">Diseases</div><div class="space-y-1.5">${nameRows('diseases')}</div></div>` : ''}
-          ${(ex.symptoms || []).length ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">Symptoms</div><div class="space-y-1.5">${nameRows('symptoms')}</div></div>` : ''}
-          ${(ex.medications || []).length ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">Medications</div><div class="space-y-1.5">${nameRows('medications')}</div></div>` : ''}
+        <h3 class="text-xl font-light text-[#2E2C29] mb-1 tracking-tight">Verify &amp; Correct Extraction</h3>
+        <p class="text-[11px] text-[#8C8982] mb-4">${segs.length > 1
+          ? segs.length + ' reports detected — each saves as its own card. Expand to verify.'
+          : 'Review the extracted fields before saving.'}</p>
+        <div class="flex gap-2 items-center mb-4">
+          <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-16 shrink-0">Patient</span>
+          ${inp(`int-name-${idx}`, patientName, 'patient name', 'flex-1')}
         </div>
+        <div class="space-y-2 mb-5">${segs.map(reportBlock).join('')}</div>
         <div class="flex gap-2.5">
-          <button data-act="reject" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#C16D54] py-3 rounded-xl text-xs font-extrabold">Reject</button>
-          <button data-act="confirm" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Confirm &amp; Feed Layer</button>
+          <button data-act="reject" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#C16D54] py-3 rounded-xl text-xs font-extrabold transition-colors">Reject</button>
+          <button data-act="confirm" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold transition-transform active:scale-95">Confirm &amp; Save${segs.length > 1 ? ' All' : ''}</button>
         </div>
       </div>`;
   }
@@ -643,26 +674,47 @@ function interruptCardHtml(payload: any, idx: number) {
     </div>`;
 }
 
-function collectExtracted(idx: number, base: any): any {
-  const ex = JSON.parse(JSON.stringify(base || {}));
+// Collect human edits for every report in the confirm card. Returns the shared
+// patient name plus one edited segment per report (title, date, entities).
+function collectSegments(idx: number, payload: any): { patient_name?: string, segments: any[] } {
+  const ex = payload.extracted || {};
+  const segs: any[] = (payload.segments && payload.segments.length)
+    ? payload.segments
+    : [{ name: ex.doc_type, doc_type: ex.doc_type, date: ex.doc_date, extracted: ex }];
   const g = (id: string) => ($(id) as HTMLInputElement | null)?.value;
-  const nm = g(`int-name-${idx}`); if (nm !== undefined) ex.patient_name = nm;
-  const dt = g(`int-date-${idx}`); if (dt !== undefined) ex.doc_date = dt;
-  (ex.tests || []).forEach((t: any, j: number) => {
-    const n = g(`int-t-${idx}-${j}-n`); if (n !== undefined) t.name = n;
-    const v = g(`int-t-${idx}-${j}-v`); if (v !== undefined) t.value = v;
-    const u = g(`int-t-${idx}-${j}-u`); if (u !== undefined) t.unit = u;
-    const r = g(`int-t-${idx}-${j}-r`); if (r !== undefined) t.reference_range = r;
-  });
-  ['diseases', 'symptoms', 'medications'].forEach(k => {
-    (ex[k] || []).forEach((it: any, j: number) => {
-      const val = g(`int-${k}-${idx}-${j}`); if (val !== undefined) it.name = val;
+  const patient_name = g(`int-name-${idx}`);
+  const segments = segs.map((seg, s) => {
+    const e = JSON.parse(JSON.stringify(seg.extracted || {}));
+    if (patient_name !== undefined) e.patient_name = patient_name;
+    (e.tests || []).forEach((t: any, j: number) => {
+      const n = g(`int-t-${idx}-${s}-${j}-n`); if (n !== undefined) t.name = n;
+      const v = g(`int-t-${idx}-${s}-${j}-v`); if (v !== undefined) t.value = v;
+      const u = g(`int-t-${idx}-${s}-${j}-u`); if (u !== undefined) t.unit = u;
+      const r = g(`int-t-${idx}-${s}-${j}-r`); if (r !== undefined) t.reference_range = r;
     });
+    ['diseases', 'symptoms', 'medications'].forEach(k => {
+      (e[k] || []).forEach((it: any, j: number) => {
+        const val = g(`int-${k}-${idx}-${s}-${j}`); if (val !== undefined) it.name = val;
+      });
+    });
+    const nm = g(`int-rname-${idx}-${s}`);
+    const dt = g(`int-rdate-${idx}-${s}`);
+    return { name: nm ?? seg.name, doc_type: seg.doc_type, date: dt ?? seg.date, extracted: e };
   });
-  return ex;
+  return { patient_name, segments };
 }
 
 function bindInterruptButtons() {
+  // Accordion: expand/collapse a report section in the confirm card.
+  document.querySelectorAll('[data-act="rpt-toggle"]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const t = e.currentTarget as HTMLElement;
+      const body = document.getElementById(t.dataset.target!);
+      if (!body) return;
+      const collapsed = body.classList.toggle('hidden');
+      t.querySelector('.rpt-chev')?.classList.toggle('rotate-90', !collapsed);
+    });
+  });
   document.querySelectorAll('.int-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       const t = e.currentTarget as HTMLButtonElement;
@@ -671,10 +723,15 @@ function bindInterruptButtons() {
       if (!payload) return;
       let resume: any;
       if (payload.type === 'confirm_ingest') {
-        resume = t.dataset.act === 'confirm'
-          ? { approved: true, extracted: collectExtracted(idx, payload.extracted),
-              ...(payload.patient_id ? { patient_id: payload.patient_id } : {}) }
-          : { approved: false };
+        if (t.dataset.act === 'confirm') {
+          const c = collectSegments(idx, payload);
+          resume = { approved: true, segments: c.segments,
+            extracted: c.segments[0]?.extracted,
+            ...(payload.patient_id ? { patient_id: payload.patient_id } : {}),
+            ...(c.patient_name ? { name: c.patient_name } : {}) };
+        } else {
+          resume = { approved: false };
+        }
       } else if (payload.type === 'patient_pick') {
         if (t.dataset.act === 'pp-cancel') {
           resume = { patient_id: null };

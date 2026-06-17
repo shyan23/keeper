@@ -19,14 +19,18 @@ from app.services.documents import (
 )
 from app.services.entities import persist_extraction
 from app.services.dates import date_from_text, parse_doc_date
-from app.services.extraction import extract_pages, extract_text
+from app.services.extraction import extract_pages, extract_text, slice_pdf
 from app.services.patients import create_patient
 from app.services.segment import doc_type_for, split_reports
 from app.models import Patient
 
 
 _EXTRACT_PROMPT = """Extract structured medical data from this document text.
-For each entity set confidence (0-1) and source_span (the exact text you used).
+
+patient_name, patient_age, patient_gender, doc_type, doc_date and doctor are PLAIN
+values (a string or a number) — NOT objects. patient_age is an integer.
+Only the list items in diseases, symptoms, medications and tests are objects with
+a name plus confidence (0-1) and source_span (the exact text you used).
 If a field is absent, leave it null/empty.
 
 Document:
@@ -115,6 +119,7 @@ def segment_extract_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
             "report_date": rdate.isoformat() if rdate else None,
             "extracted": ex,
             "text": text,
+            "pages": seg.get("pages") or [],   # source page indices -> slice file per report
         })
         if not patient_name:
             patient_name = ex.get("patient_name")
@@ -168,17 +173,16 @@ def confirm_ingest_node(state: dict[str, Any], config: dict[str, Any]) -> dict[s
     deps = config["configurable"]["deps"]
     ex = state.get("extracted") or {}
     segments = state.get("segments") or []
-    # Compact summary of every detected report so the human sees the split (e.g.
-    # "5 reports: Haematological Report · 2021-02-25 · 18 items").
-    reports = [{
-        "name": s.get("name"), "doc_type": s.get("doc_type"), "date": s.get("report_date"),
-        "items": (len(s["extracted"].get("tests") or []) + len(s["extracted"].get("diseases") or [])
-                  + len(s["extracted"].get("symptoms") or []) + len(s["extracted"].get("medications") or [])),
+    # Every detected report is sent for review/edit, each with its own title, date
+    # and entities, so the human verifies all N reports (not just the first).
+    seg_payload = [{
+        "name": s.get("name"), "doc_type": s.get("doc_type"),
+        "date": s.get("report_date"), "extracted": s.get("extracted") or {},
     } for s in segments]
     decision = interrupt({
         "type": "confirm_ingest",
-        "extracted": ex,
-        "reports": reports,
+        "extracted": ex,            # first report (back-compat)
+        "segments": seg_payload,    # all reports, editable one by one
         "candidates": state.get("patient_candidates", []),
         "patient_id": state.get("patient_id"),  # set if a single existing match
         "extracted_name": ex.get("patient_name"),
@@ -188,10 +192,23 @@ def confirm_ingest_node(state: dict[str, Any], config: dict[str, Any]) -> dict[s
     if not decision.get("approved"):
         return {"extracted": None, "intent": "rejected"}
 
-    extracted = decision.get("extracted", ex)
-    # Apply any human edits from the card back onto the first report.
-    if segments:
-        segments = [{**segments[0], "extracted": extracted}] + segments[1:]
+    # Merge per-report human edits back onto each segment.
+    edited = decision.get("segments")
+    if edited:
+        merged = []
+        for i, s in enumerate(segments):
+            e = edited[i] if i < len(edited) else {}
+            merged.append({
+                **s,
+                "extracted": e.get("extracted", s["extracted"]),
+                "name": e.get("name") or s.get("name"),
+                "doc_type": e.get("doc_type") or s.get("doc_type"),
+                "report_date": e.get("date") if e.get("date") is not None else s.get("report_date"),
+            })
+        segments = merged
+    elif segments:  # back-compat: single edited blob
+        segments = [{**segments[0], "extracted": decision.get("extracted", ex)}] + segments[1:]
+    extracted = (segments[0]["extracted"] if segments else decision.get("extracted", ex))
     # Patient: use the chosen/pre-matched id, else create a new profile.
     pid = decision.get("patient_id") or state.get("patient_id")
     if pid is None:
@@ -246,7 +263,14 @@ def persist_reports_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
             )
             doc_id = doc.id
             if data is not None:
-                set_file_path(s, doc_id, storage.save_bytes(pid, doc_id, ext, data))
+                # Save only THIS report's pages so its card opens just that report,
+                # not the whole bundle. Multi-report PDFs get sliced; everything else
+                # (single report, images) saves the original bytes.
+                blob = data
+                if (len(segments) > 1 and state.get("mime_type") == "application/pdf"
+                        and seg.get("pages")):
+                    blob = slice_pdf(data, seg["pages"])
+                set_file_path(s, doc_id, storage.save_bytes(pid, doc_id, ext, blob))
             total_entities += persist_extraction(s, document_id=doc_id, result=result)
             text = seg.get("text") or ""
             header = (f"{ex.get('patient_name') or ''} · {seg.get('name') or 'doc'} · "

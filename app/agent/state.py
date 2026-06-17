@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---- Extraction schemas (Groq structured-output target) ----
@@ -23,6 +23,24 @@ class ExtractedTest(BaseModel):
     source_span: str = ""
 
 
+_SCALAR_FIELDS = ("patient_name", "patient_age", "patient_gender",
+                  "doc_type", "doc_date", "doctor")
+
+
+def _unwrap_scalar(v: Any) -> Any:
+    """The LLM sometimes wraps a scalar in an entity object
+    ({'name': 'MRS. NAFISA KABIR', 'confidence': .9, 'source_span': '…'})
+    because the prompt asks for confidence/source_span. Pull the scalar back out."""
+    if isinstance(v, dict):
+        for k in ("name", "value", "text"):
+            if v.get(k) is not None:
+                return v[k]
+        return None
+    if isinstance(v, list):
+        return _unwrap_scalar(v[0]) if v else None
+    return v
+
+
 class ExtractionResult(BaseModel):
     patient_name: str | None = None
     patient_age: int | None = None
@@ -36,6 +54,17 @@ class ExtractionResult(BaseModel):
     tests: list[ExtractedTest] = Field(default_factory=list)
     confidence: float = 0.5
     source_span: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_scalars(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for f in _SCALAR_FIELDS:
+            if f in out:
+                out[f] = _unwrap_scalar(out[f])
+        return out
 
 
 # ---- Client protocols (injected; fakes in tests) ----

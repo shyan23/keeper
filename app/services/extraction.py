@@ -24,6 +24,24 @@ def _pdf_text(data: bytes) -> str:
     return _PAGE_SEP.join(parts).strip()
 
 
+def slice_pdf(data: bytes, pages: list[int]) -> bytes:
+    """Return a new PDF containing only `pages` (0-based) from `data`. Lets each
+    detected report be saved as its own file so its card opens just that report,
+    not the whole multi-report bundle. Out-of-range/empty -> original bytes."""
+    from pypdf import PdfReader, PdfWriter
+    reader = PdfReader(io.BytesIO(data))
+    n = len(reader.pages)
+    keep = [i for i in pages if 0 <= i < n]
+    if not keep or len(keep) == n:
+        return data
+    writer = PdfWriter()
+    for i in keep:
+        writer.add_page(reader.pages[i])
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+
 def _pdf_to_images(data: bytes) -> list[bytes]:
     """Rasterize PDF pages to JPEG bytes. Vision models need real images, not PDF bytes."""
     import fitz  # PyMuPDF
