@@ -30,6 +30,7 @@ class PatientIn(BaseModel):
 
 class RecordOut(BaseModel):
     id: str
+    documentId: str = ""
     patientId: str
     type: str  # disease | symptom | medicine | test_result | treatment_plan
     title: str

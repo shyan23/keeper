@@ -36,3 +36,22 @@ def parse_doc_date(s: str | None) -> dt.date | None:
         except ValueError:
             return None
     return None
+
+
+# Lines that, when present, strongly indicate a report/collection date follows.
+_DATE_HINTS = ("date", "received", "reported", "collected", "sample", "drawn", "printed")
+
+
+def date_from_text(text: str | None) -> dt.date | None:
+    """Fallback when the LLM didn't return a doc_date: pull the report date out of
+    the OCR text. Prefer lines that name a date (e.g. 'Sample Received: 30/04/21'),
+    then fall back to the first date-like token anywhere in the document."""
+    if not text:
+        return None
+    for line in text.splitlines():
+        low = line.lower()
+        if any(h in low for h in _DATE_HINTS):
+            d = parse_doc_date(line)
+            if d:
+                return d
+    return parse_doc_date(text)

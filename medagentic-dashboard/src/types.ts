@@ -59,6 +59,7 @@ export interface ApiPatient {
 
 export interface ApiRecord {
   id: string;
+  documentId: string;
   patientId: string;
   type: string;
   title: string;

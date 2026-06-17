@@ -17,7 +17,7 @@ from app.services.documents import (
     create_document, find_by_content_hash, get_document, set_file_path,
 )
 from app.services.entities import persist_extraction
-from app.services.dates import parse_doc_date
+from app.services.dates import date_from_text, parse_doc_date
 from app.services.extraction import extract_text
 from app.services.patients import create_patient
 from app.models import Patient
@@ -161,12 +161,15 @@ def create_document_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
             return {"document_id": dup[0], "patient_id": dup[1],
                     "already_ingested": True}
 
+    # Date priority: LLM-extracted doc_date, else scrape it from the OCR text,
+    # else None (the read side falls back to upload time only as a last resort).
+    report_date = parse_doc_date(ex.get("doc_date")) or date_from_text(state.get("ocr_text"))
     with deps.session_factory() as s:
         doc = create_document(
             s, patient_id=state["patient_id"], doc_type=ex.get("doc_type"),
             source_type=state.get("source_type"), mime_type=state.get("mime_type"),
             content_hash=chash,
-            report_date=parse_doc_date(ex.get("doc_date")),
+            report_date=report_date,
             original_name=state.get("original_name"),
         )
         doc_id = doc.id

@@ -58,6 +58,7 @@ def _record(patient_id: str, ui_type: str, idx: int, title: str, row: dict,
             value: str = "", unit: str = "", reference: str = "") -> dict:
     return {
         "id": f"{ui_type}-{row.get('document_id')}-{idx}",
+        "documentId": str(row.get("document_id")) if row.get("document_id") is not None else "",
         "patientId": patient_id,
         "type": ui_type,
         "title": title,

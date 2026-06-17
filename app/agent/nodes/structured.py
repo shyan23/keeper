@@ -41,13 +41,20 @@ def query_db_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, An
             q = q.filter(func.lower(Patient.name) == f["patient_name"].lower())
         if f.get("doc_type"):
             q = q.filter(Document.doc_type == f["doc_type"])
-        q = q.order_by(Document.uploaded_at.desc(), Document.id.desc())
+        q = q.order_by(
+            func.coalesce(Document.report_date, func.date(Document.uploaded_at)).desc(),
+            Document.id.desc(),
+        )
         limit = 1 if f.get("latest") else 10
         docs = q.limit(limit).all()
         rows = [{"document_id": d.id, "doc_type": d.doc_type,
-                 "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None}
+                 "name": d.original_name or f"document-{d.id}",
+                 "date": (d.report_date.strftime("%Y-%m-%d") if d.report_date
+                          else d.uploaded_at.strftime("%Y-%m-%d") if d.uploaded_at else None)}
                 for d in docs]
     if not rows:
         return {"answer": "No matching documents found.", "citations": []}
-    lines = [f"- {r['doc_type'] or 'document'} (id {r['document_id']}, {r['uploaded_at']})" for r in rows]
+    # User-facing text references documents by type + date — never internal ids.
+    lines = [f"- {r['doc_type'] or 'document'}{(' — ' + r['date']) if r['date'] else ''}"
+             for r in rows]
     return {"answer": "Found:\n" + "\n".join(lines), "citations": rows}
