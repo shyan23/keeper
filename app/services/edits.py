@@ -7,7 +7,9 @@ an explicit apply call from the confirm gate.
 """
 from __future__ import annotations
 
-from typing import Any
+import re
+from difflib import SequenceMatcher
+from typing import Any, Callable
 
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -39,6 +41,46 @@ def _doc_order(q):
     )
 
 
+# Filler words that shouldn't affect a test/entity name match.
+_FILLER = {"level", "levels", "count", "counts", "value", "values", "reading", "readings",
+           "result", "results", "test", "the", "of", "in", "a", "an", "percentage", "percent"}
+_MATCH_THRESHOLD = 0.5
+
+
+def _norm_tokens(s: str) -> list[str]:
+    """Lowercase, fold common British/American medical spellings (haemo->hemo,
+    anaemia->anemia), drop punctuation and filler words. So 'haemoglobin level'
+    and 'Hemoglobin (Hb%)' overlap."""
+    s = s.lower().replace("haemo", "hemo").replace("oe", "e").replace("ae", "e")
+    s = re.sub(r"[^a-z0-9 ]+", " ", s)
+    return [t for t in s.split() if t and t not in _FILLER]
+
+
+def _match_score(target: str, name: str) -> float:
+    tt, nt = _norm_tokens(target), _norm_tokens(name)
+    if not tt or not nt:
+        return 0.0
+    ts, ns = set(tt), set(nt)
+    overlap = len(ts & ns) / len(ts) if ts else 0.0   # how much of the target is present
+    seq = SequenceMatcher(None, " ".join(tt), " ".join(nt)).ratio()
+    return max(overlap, seq)
+
+
+def _select(rows: list, target: str, name_of: Callable[[Any], str]):
+    """From rows (already newest-document-first) pick the best fuzzy name match.
+    Empty target -> newest row. Stable sort keeps the latest among equal scores."""
+    if not rows:
+        return None
+    if not target:
+        return rows[0]
+    scored = [(r, _match_score(target, name_of(r))) for r in rows]
+    scored = [(r, sc) for r, sc in scored if sc >= _MATCH_THRESHOLD]
+    if not scored:
+        return None
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return scored[0][0]
+
+
 def _doc_info(doc: Document) -> dict[str, Any]:
     return {
         "document_id": doc.id,
@@ -65,9 +107,7 @@ def find_edit_target(db: Session, patient_id: int, plan: dict[str, Any]) -> dict
                                         DocumentEntity.entity_type == "test_result"))
              .join(Document, Document.id == DocumentEntity.document_id)
              .filter(Document.patient_id == patient_id))
-        if name:
-            q = q.filter(func.lower(MedicalTest.name).like(f"%{name.lower()}%"))
-        row = _doc_order(q).first()
+        row = _select(_doc_order(q).all(), name, name_of=lambda r: r[1])
         if not row:
             return None
         tr, tname, doc = row
@@ -86,9 +126,7 @@ def find_edit_target(db: Session, patient_id: int, plan: dict[str, Any]) -> dict
                                         DocumentEntity.entity_type == etype))
              .join(Document, Document.id == DocumentEntity.document_id)
              .filter(Document.patient_id == patient_id))
-        if name:
-            q = q.filter(func.lower(model.name).like(f"%{name.lower()}%"))
-        row = _doc_order(q).first()
+        row = _select(_doc_order(q).all(), name, name_of=lambda r: r[0].name)
         if not row:
             return None
         obj, doc = row
