@@ -103,10 +103,27 @@ def split_reports(chat, pages: list[str]) -> list[dict]:
     if not reports:
         return _regex_segments(pages)
 
-    out: list[dict] = []
     n = len(pages)
-    for r in reports:
-        idxs = sorted({i for i in r.pages if 0 <= i < n}) or list(range(n))
+    specs = [(r, sorted({i for i in r.pages if 0 <= i < n})) for r in reports]
+
+    # The LLM often names N reports but leaves `pages` empty, or assigns the same
+    # page to several. Defaulting each to "all pages" would slice every report to
+    # the whole bundle, so every card opens page 1. When the split is degenerate
+    # (any report has no pages, or pages overlap) fall back to regex header-split,
+    # which gives each titled report its own page(s).
+    assigned = [i for _, idxs in specs for i in idxs]
+    degenerate = any(not idxs for _, idxs in specs) or len(assigned) != len(set(assigned))
+    if len(specs) > 1 and degenerate:
+        # One title per page (N reports, N pages) -> trust the titles, assign pages
+        # 1:1 in scan order. Otherwise the page split is unreliable -> regex headers.
+        if len(specs) == n:
+            specs = [(r, [i]) for i, (r, _) in enumerate(specs)]
+        else:
+            return _regex_segments(pages)
+
+    out: list[dict] = []
+    for r, idxs in specs:
+        idxs = idxs or list(range(n))  # single-report case only
         out.append({
             "title": (r.title or "").strip() or None,
             "doc_type": (r.doc_type or "document").strip().lower(),
