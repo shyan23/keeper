@@ -38,6 +38,31 @@ def extract_text_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str
     return {"ocr_text": text, "content_hash": hashlib.sha256(data).hexdigest()}
 
 
+def dedup_check_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Hash the staged file BEFORE OCR. If this exact file was ingested already,
+    short-circuit: reuse the existing document and skip OCR/extraction/HITL."""
+    deps = config["configurable"]["deps"]
+    data = Path(state["file_path"]).read_bytes()
+    chash = hashlib.sha256(data).hexdigest()
+    with deps.session_factory() as s:
+        existing = find_by_content_hash(s, chash)
+        dup = (existing.id, existing.patient_id) if existing is not None else None
+    if dup is not None:
+        staged = state.get("file_path")
+        if staged and os.path.exists(staged):
+            try:
+                os.remove(staged)
+            except OSError:
+                pass
+        return {"dedup": "duplicate", "already_ingested": True,
+                "content_hash": chash, "document_id": dup[0], "patient_id": dup[1],
+                "messages": state["messages"] + [{
+                    "role": "assistant",
+                    "content": "This document was already on file — skipped to avoid duplicates.",
+                }]}
+    return {"dedup": "new", "content_hash": chash}
+
+
 def extract_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     deps = config["configurable"]["deps"]
     text = state["ocr_text"]

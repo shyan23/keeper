@@ -6,7 +6,7 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.router import classify_intent
 from app.agent.state import AgentState
 from app.agent.nodes.ingest import (
-    chunk_embed_node, confirm_ingest_node, create_document_node,
+    chunk_embed_node, confirm_ingest_node, create_document_node, dedup_check_node,
     extract_entities_node, extract_text_node, persist_node, resolve_patient_node,
 )
 from app.agent.nodes.structured import parse_filters_node, query_db_node
@@ -35,6 +35,7 @@ def build_graph(checkpointer=None):
 
     g.add_node("router", classify_intent)
     # ingest
+    g.add_node("dedup_check", dedup_check_node)
     g.add_node("extract_text", extract_text_node)
     g.add_node("extract_entities", extract_entities_node)
     g.add_node("resolve_patient", resolve_patient_node)
@@ -56,12 +57,14 @@ def build_graph(checkpointer=None):
 
     g.add_edge(START, "router")
     g.add_conditional_edges("router", _route, {
-        "ingest": "extract_text",
+        "ingest": "dedup_check",
         "structured_query": "parse_filters",
         "rag_query": "transform_query",
     })
 
     # ingest chain — single approval gate (patient + entities reviewed together)
+    g.add_conditional_edges("dedup_check", lambda s: s.get("dedup", "new"),
+                            {"duplicate": END, "new": "extract_text"})
     g.add_edge("extract_text", "extract_entities")
     g.add_edge("extract_entities", "resolve_patient")
     g.add_edge("resolve_patient", "confirm_ingest")
