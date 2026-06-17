@@ -729,5 +729,36 @@ function initSidebarResize() {
   document.addEventListener('mouseup', stop);
 }
 
+// ---- resizable dashboard/chat divider ----
+function initPanelResize() {
+  const panel = $('knowledge-view');
+  const handle = $('panel-resizer');
+  if (!panel || !handle) return;
+  const MIN = 320, MAX = 760;
+  const saved = parseInt(localStorage.getItem('panelWidth') || '', 10);
+  if (saved >= MIN && saved <= MAX) panel.style.width = `${saved}px`;
+  let dragging = false;
+  const onMove = (e: MouseEvent) => {
+    if (!dragging) return;
+    // panel is on the right; width grows as the cursor moves left of its right edge.
+    const w = Math.min(MAX, Math.max(MIN, panel.getBoundingClientRect().right - e.clientX));
+    panel.style.width = `${w}px`;
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    localStorage.setItem('panelWidth', String(parseInt(panel.style.width, 10) || MIN));
+  };
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true;
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', stop);
+}
+
 initSidebarResize();
+initPanelResize();
 init();
