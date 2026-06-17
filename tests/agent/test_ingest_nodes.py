@@ -53,6 +53,18 @@ def test_resolve_patient_exact_match(db_session_factory):
     assert out.get("patient_candidates") in (None, [])
 
 
+def test_resolve_patient_fuzzy_candidate(db_session_factory):
+    """A near-but-not-exact name surfaces as a candidate (ask 'same as X?'), never auto-resolved."""
+    from app.services.patients import create_patient
+    sf = db_session_factory
+    with sf() as s:
+        create_patient(s, name="Nafisa Kabir Fuzzy")
+    state = {"extracted": {"patient_name": "Nafisa Kabier Fuzzy"}}  # 1-char diff
+    out = resolve_patient_node(state, _cfg(sf=sf))
+    assert out["patient_id"] is None
+    assert "Nafisa Kabir Fuzzy" in [c["name"] for c in out["patient_candidates"]]
+
+
 def test_resolve_patient_no_match_sets_candidates(db_session_factory):
     state = {"extracted": {"patient_name": "Nobody Named This 9999"}}
     out = resolve_patient_node(state, _cfg(sf=db_session_factory))

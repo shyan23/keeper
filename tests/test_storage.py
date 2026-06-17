@@ -1,7 +1,16 @@
+import os
 from pathlib import Path
 
 import app.storage as storage
-from app.storage import save_bytes, path_for, read_file
+from app.storage import save_bytes, path_for, read_file, save_staging
+
+
+def test_paths_are_absolute(monkeypatch):
+    monkeypatch.setattr(storage, "STORAGE_DIR", "./data/files")
+    assert os.path.isabs(path_for(1, 2, "pdf"))
+    p = save_staging("pdf", b"hi")
+    assert os.path.isabs(p)
+    os.remove(p)
 
 
 def test_path_for(monkeypatch, tmp_path):

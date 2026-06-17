@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api import mapping
@@ -86,6 +87,22 @@ def patient_documents(patient_id: int) -> list[dict]:
                 pass
             out.append(mapping.document_to_out(row, size_str))
         return out
+    finally:
+        db.close()
+
+
+@router.get("/documents/{document_id}/file")
+def document_file(document_id: int):
+    """Stream the original uploaded file so citations/docs can open it."""
+    db = SessionLocal()
+    try:
+        doc = dsvc.get_document(db, document_id)
+        if doc is None or not doc.file_path or not os.path.exists(doc.file_path):
+            raise HTTPException(status_code=404, detail="document file not found")
+        filename = doc.original_name or os.path.basename(doc.file_path)
+        return FileResponse(doc.file_path,
+                            media_type=doc.mime_type or "application/octet-stream",
+                            filename=filename)
     finally:
         db.close()
 

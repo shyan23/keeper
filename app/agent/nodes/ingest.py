@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,7 @@ from app.services.documents import (
     create_document, find_by_content_hash, get_document, set_file_path,
 )
 from app.services.entities import persist_extraction
+from app.services.dates import date_from_text, parse_doc_date
 from app.services.extraction import extract_text
 from app.services.patients import create_patient
 from app.models import Patient
@@ -79,23 +82,42 @@ def extract_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict
     return {"extracted": extracted}
 
 
+# Honorifics / titles that should NOT distinguish two patients.
+_TITLE_TOKENS = {
+    "mr", "mrs", "ms", "miss", "mst", "master", "md", "dr", "prof", "professor",
+    "mister", "sir", "madam", "smt", "mr.", "mrs.", "dr.",
+}
+
+
+def _normalize_name(name: str | None) -> str:
+    """Lowercase, drop honorifics/titles and punctuation, collapse whitespace so
+    'MRS. NAFISA KABIR' and 'Nafisa Kabir' compare as the same person."""
+    n = re.sub(r"[.\,]", " ", (name or "").lower())
+    toks = [t for t in n.split() if t and t not in _TITLE_TOKENS]
+    return " ".join(toks)
+
+
 def resolve_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """No prompt — just look up name matches so the single gate can show them.
-    Pre-selects patient_id when exactly one existing patient matches the name."""
+    """Match the extracted name to existing patients. A single normalized match
+    auto-resolves. A close-but-not-exact name (or an ambiguous tie) becomes a
+    candidate so the confirm gate can ask 'same person as X?' — never silently
+    creating a near-duplicate profile. Honorifics ('MRS.', 'Dr.') are ignored."""
     deps = config["configurable"]["deps"]
     name = (state.get("extracted") or {}).get("patient_name")
     if not name:
         return {"patient_id": None, "patient_candidates": []}
+    nnorm = _normalize_name(name)
     with deps.session_factory() as s:
-        matches = (
-            s.query(Patient)
-            .filter(Patient.name.ilike(name))
-            .all()
-        )
-        cands = [{"id": p.id, "name": p.name} for p in matches]
-    if len(cands) == 1:
-        return {"patient_id": cands[0]["id"], "patient_candidates": []}
-    return {"patient_id": None, "patient_candidates": cands}
+        all_p = s.query(Patient).all()
+        exact = [{"id": p.id, "name": p.name} for p in all_p
+                 if _normalize_name(p.name) == nnorm]
+        fuzzy = [{"id": p.id, "name": p.name} for p in all_p
+                 if _normalize_name(p.name) != nnorm
+                 and SequenceMatcher(None, nnorm, _normalize_name(p.name)).ratio() >= 0.85]
+    if len(exact) == 1:
+        return {"patient_id": exact[0]["id"], "patient_candidates": []}
+    # 0 matches -> brand new; 2+ normalized matches -> ambiguous, let the human pick.
+    return {"patient_id": None, "patient_candidates": exact + fuzzy}
 
 
 def confirm_ingest_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -157,11 +179,16 @@ def create_document_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
             return {"document_id": dup[0], "patient_id": dup[1],
                     "already_ingested": True}
 
+    # Date priority: LLM-extracted doc_date, else scrape it from the OCR text,
+    # else None (the read side falls back to upload time only as a last resort).
+    report_date = parse_doc_date(ex.get("doc_date")) or date_from_text(state.get("ocr_text"))
     with deps.session_factory() as s:
         doc = create_document(
             s, patient_id=state["patient_id"], doc_type=ex.get("doc_type"),
             source_type=state.get("source_type"), mime_type=state.get("mime_type"),
             content_hash=chash,
+            report_date=report_date,
+            original_name=state.get("original_name"),
         )
         doc_id = doc.id
         final_path = staged

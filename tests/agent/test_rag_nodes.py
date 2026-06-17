@@ -32,17 +32,26 @@ def test_grade_high_confidence_passes():
     assert out["low_confidence"] is False
 
 
-def test_generate_answer_includes_citations():
+def test_generate_answer_emits_doc_sources_not_chunk_ids():
     state = {
-        "messages": [{"role": "user", "content": "what is her hemoglobin?"}],
+        "messages": [{"role": "user", "content": "eosinophil?"}],
         "retrieved": [
-            {"chunk_id": 7, "text": "hemoglobin 13.5 g/dL", "doc_type": "lab_report", "uploaded_at": "2026-06-10"},
+            {"chunk_id": 50, "document_id": 7, "text": "Eosinophil 8%", "doc_type": "LAB REPORT",
+             "report_date": "2021-04-30", "original_name": "lab.pdf", "page_ref": "1"},
+            {"chunk_id": 46, "document_id": 7, "text": "more", "doc_type": "LAB REPORT",
+             "report_date": "2021-04-30", "original_name": "lab.pdf", "page_ref": "2"},
         ],
     }
-    out = generate_answer_node(state, _cfg(_FakeChat("Her hemoglobin is 13.5 g/dL")))
-    assert out["answer"]
-    assert out["citations"][0]["chunk_id"] == 7
-    assert "#7" in out["messages"][-1]["content"]
+    out = generate_answer_node(state, _cfg(_FakeChat("Eosinophil is 8%.")))
+    last = out["messages"][-1]
+    # no chunk ids, no glued raw-OCR "Sources:" block
+    assert "#50" not in last["content"] and "#46" not in last["content"]
+    assert "Sources:" not in last["content"]
+    # chunks of one document collapse into a single citation
+    assert len(out["sources"]) == 1
+    assert out["sources"][0]["document_id"] == 7
+    assert out["sources"][0]["date"] == "2021-04-30"
+    assert last["sources"] == out["sources"]
 
 
 def test_generate_answer_refuses_when_empty():
@@ -88,3 +97,35 @@ def test_correct_query_sets_corrected_flag():
 def test_confirm_low_conf_skips_when_empty_hits():
     out = confirm_low_confidence_node({"low_confidence": True, "retrieved": []}, _cfg(_FakeChat("x")))
     assert out == {}
+
+
+def test_require_patient_passes_when_set():
+    from app.agent.nodes.rag import require_patient_node
+    out = require_patient_node({"patient_id": 3}, _cfg(_FakeChat("")))
+    assert out == {}
+
+
+def test_require_patient_asks_then_resumes(monkeypatch):
+    """No patient -> interrupt with a picker; the resumed choice becomes patient_id."""
+    import app.agent.nodes.rag as rag_mod
+    from app.agent.nodes.rag import require_patient_node
+
+    class _FakeSession:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def query(self, *a): return self
+        def order_by(self, *a): return self
+        def all(self): return []
+
+    captured = {}
+
+    def fake_interrupt(payload):
+        captured["payload"] = payload
+        return {"patient_id": 9}  # simulate the human's pick on resume
+
+    monkeypatch.setattr(rag_mod, "interrupt", fake_interrupt)
+    cfg = _cfg(_FakeChat(""))
+    cfg["configurable"]["deps"].session_factory = lambda: _FakeSession()
+    out = require_patient_node({"patient_id": None}, cfg)
+    assert captured["payload"]["type"] == "patient_pick"
+    assert out == {"patient_id": 9}

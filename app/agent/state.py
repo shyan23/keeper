@@ -75,15 +75,18 @@ class AgentState(TypedDict, total=False):
     source_type: str | None
     ocr_text: str | None
     content_hash: str | None              # SHA-256 of file bytes (dedup)
+    original_name: str | None             # uploaded filename, stored on the document
     already_ingested: bool                # True when an identical file was found
     extracted: dict[str, Any] | None      # ExtractionResult.model_dump()
     patient_id: int | None
     patient_candidates: list[dict[str, Any]]
     # query
     query_filters: dict[str, Any] | None
+    edit_target: dict[str, Any] | None    # proposed correction awaiting HITL verify
     retrieved: list[dict[str, Any]]
     answer: str | None
     citations: list[dict[str, Any]]
+    sources: list[dict[str, Any]]         # per-document citations for the UI (no chunk ids)
     retrieval_query: str | None
     corrected: bool
     low_confidence: bool

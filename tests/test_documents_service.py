@@ -1,5 +1,15 @@
+import datetime as dt
+
 from app.services import documents as dsvc
 from app.services import patients as psvc
+
+
+def test_create_document_stores_report_date_and_name(db):
+    p = psvc.create_patient(db, name="Date Owner")
+    d = dsvc.create_document(db, patient_id=p.id, doc_type="LAB REPORT",
+                             report_date=dt.date(2021, 4, 30), original_name="lab.pdf")
+    assert d.report_date == dt.date(2021, 4, 30)
+    assert d.original_name == "lab.pdf"
 
 
 def test_create_and_list_documents(db):

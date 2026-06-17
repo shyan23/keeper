@@ -88,16 +88,75 @@ class TesseractVision:
 
     Needs the system binary (`apt install tesseract-ocr`) + pytesseract. If either
     is missing, ocr_image raises and FallbackVision advances to the next provider.
-    """
+
+    Phone scans (CamScanner etc.) OCR badly in a single default pass. So ocr_image
+    runs an escalating set of preprocessing variants and keeps the result with the
+    highest mean per-word confidence, stopping early once a variant clears the
+    benchmark. Tesseract-only — no vision-model escalation (CPU/speed budget)."""
+
+    # Tesseract confidence is 0–100. Stop as soon as a variant's mean word
+    # confidence clears this; otherwise return the best variant tried.
+    BENCHMARK = 70.0
 
     def ocr_image(self, data: bytes, mime: str) -> str:
+        variants = self._preprocess_variants(data, mime)
+        best_text, best_conf, best_name = "", -1.0, "none"
+        for name, img, psm in variants:
+            try:
+                text, conf = self._ocr_pass(img, psm)
+            except Exception as e:  # noqa: BLE001 - one bad variant must not abort the loop
+                log.warning("ocr variant %s failed: %s", name, e)
+                continue
+            log.info("ocr variant %s: conf=%.1f len=%d", name, conf, len(text))
+            if conf > best_conf:
+                best_text, best_conf, best_name = text, conf, name
+            if conf >= self.BENCHMARK:
+                break
+        log.info("ocr best variant=%s conf=%.1f (benchmark %.0f)",
+                 best_name, best_conf, self.BENCHMARK)
+        return best_text.strip()
+
+    def _preprocess_variants(self, data: bytes, mime: str):
+        """Yield (name, PIL.Image, psm) tuples, cheapest/most-likely first so the
+        loop usually stops on variant 1. All PIL-only — no numpy/cv2."""
         import io
 
-        import pytesseract
-        from PIL import Image
+        from PIL import Image, ImageFilter, ImageOps
 
-        img = Image.open(io.BytesIO(data))
-        return pytesseract.image_to_string(img).strip()
+        base = Image.open(io.BytesIO(data))
+        gray = ImageOps.grayscale(base)
+        # Upscale small scans: Tesseract wants ~300 DPI; phone shots are often less.
+        scale = 2 if max(gray.size) < 2000 else 1
+        big = gray.resize((gray.width * scale, gray.height * scale)) if scale > 1 else gray
+        contrast = ImageOps.autocontrast(big)
+        sharp = contrast.filter(ImageFilter.SHARPEN)
+        binar = sharp.point(lambda p: 255 if p > 150 else 0, mode="L")  # crude global threshold
+        return [
+            ("raw", base, 3),               # default: clean printed docs win here
+            ("gray-up-contrast", contrast, 6),  # assume a single uniform block
+            ("sharpen", sharp, 4),          # assume a column of text
+            ("binarize", binar, 6),         # last resort for low-contrast scans
+        ]
+
+    def _ocr_pass(self, img, psm: int) -> tuple[str, float]:
+        """Run one Tesseract pass; return (text, mean_word_confidence 0–100)."""
+        import pytesseract
+
+        cfg = f"--oem 3 --psm {psm}"
+        data = pytesseract.image_to_data(img, config=cfg,
+                                         output_type=pytesseract.Output.DICT)
+        words, confs = [], []
+        for word, conf in zip(data["text"], data["conf"]):
+            try:
+                c = float(conf)
+            except (TypeError, ValueError):
+                c = -1.0
+            if c >= 0 and word.strip():
+                words.append(word)
+                confs.append(c)
+        text = " ".join(words)
+        mean = sum(confs) / len(confs) if confs else 0.0
+        return text, mean
 
 
 class OllamaVision:

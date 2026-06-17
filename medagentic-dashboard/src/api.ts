@@ -4,6 +4,9 @@ import {
 
 const API = (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
 
+// Absolute URL to stream a document's original file (citations / docs table "Open").
+export const docFileUrl = (id: string | number) => `${API}/api/documents/${id}/file`;
+
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -38,6 +41,8 @@ export async function uploadFile(file: File):
 
 // Read an SSE stream from a POST response and dispatch to handlers.
 async function readSse(res: Response, h: SseHandlers): Promise<void> {
+  const t0 = performance.now();
+  console.debug('[sse] stream opened', res.status);
   if (!res.ok || !res.body) {
     h.onError?.(`${res.status} ${res.statusText}`);
     h.onDone?.();
@@ -61,19 +66,20 @@ async function readSse(res: Response, h: SseHandlers): Promise<void> {
       }
       let parsed: any = {};
       try { parsed = data ? JSON.parse(data) : {}; } catch { parsed = {}; }
+      console.debug(`[sse +${((performance.now() - t0) / 1000).toFixed(2)}s] ${event}`, parsed);
       if (event === 'node') h.onNode?.(parsed.label);
       else if (event === 'progress') h.onProgress?.(parsed.msg);
       else if (event === 'interrupt') h.onInterrupt?.(parsed);
       else if (event === 'message') h.onMessage?.(parsed);
       else if (event === 'error') h.onError?.(parsed.message);
-      else if (event === 'done') h.onDone?.();
+      else if (event === 'done') h.onDone?.(parsed);
     }
   }
 }
 
 export async function streamChat(body: {
   thread_id: string; message?: string; patient_id?: number | null;
-  staged_path?: string; mime?: string; ext?: string;
+  staged_path?: string; mime?: string; ext?: string; original_name?: string;
 }, handlers: SseHandlers): Promise<void> {
   const res = await fetch(`${API}/api/chat/stream`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

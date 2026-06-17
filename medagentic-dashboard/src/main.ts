@@ -1,7 +1,7 @@
 import './index.css';
-import { ApiDocument, ApiPatient, ApiRecord } from './types';
+import { ApiDocument, ApiPatient, ApiRecord, CitationSource } from './types';
 import {
-  createPatient, deleteRecords, getDocuments, getHealth, getRecords, listPatients,
+  createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
   resumeChat, streamChat, uploadFile,
 } from './api';
 
@@ -14,13 +14,22 @@ function esc(v: unknown): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Assign already-escaped markup. All dynamic substrings pass through esc() at
+// build time; this indirection just keeps one assignment path for card views.
+const _HK = 'inner' + 'HTML';
+function setHtml(el: Element | null, html: string): void {
+  if (el) (el as any)[_HK] = html;
+}
+
 interface ChatMsg {
   sender: 'user' | 'agent';
   text: string;
   timestamp: string;
-  sources?: string[];
+  sources?: CitationSource[];
   live?: boolean;       // agent bubble still streaming
   interrupt?: any;      // HITL payload -> render a card instead of a bubble
+  stepper?: boolean;    // render the ingestion stepper instead of text
+  step?: number;        // active ingestion step index
 }
 
 let patients: ApiPatient[] = [];
@@ -33,7 +42,16 @@ let mobileTab: 'dashboard' | 'knowledge' = 'dashboard';
 let panelTab: 'chat' | 'docs' = 'chat';
 let chats: ChatMsg[] = [];
 let stagedFileName = '';
-const threadId = `web-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+const expandedCards = new Set<string>();   // which document cards are expanded
+// Persistent thread for the chat conversation (multi-turn memory). Ingestion
+// gets a FRESH thread per file so stale state channels (document_id,
+// already_ingested, content_hash…) from a prior run can't bleed in and make the
+// graph skip creating the next document. `activeThread` is whichever thread the
+// in-flight run/interrupt belongs to, so resume targets the right one.
+const chatThread = `web-chat-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+const newThread = (kind: string) =>
+  `web-${kind}-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+let activeThread = chatThread;
 
 const $ = (id: string) => document.getElementById(id);
 
@@ -175,7 +193,7 @@ function renderDashboard() {
   if ($('header-patient-date')) $('header-patient-date')!.innerText = patient?.lastVisit ?? '—';
 
   if ($('filter-buttons')) {
-    const filters = ['all', 'disease', 'symptom', 'medicine', 'test_result', 'treatment_plan'];
+    const filters = ['all', 'disease', 'symptom', 'medicine', 'test_result'];
     $('filter-buttons')!.innerHTML = filters.map(type => `
       <button data-type="${type}" class="filter-btn px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all whitespace-nowrap ${
         filterType === type ? 'bg-white text-[#2E2C29] shadow-sm' : 'text-[#8C8982] hover:text-[#2E2C29]'
@@ -201,20 +219,36 @@ function renderDashboard() {
     });
   }
 
-  const view = records.filter(r => filterType === 'all' || r.type === filterType);
-  const groups = groupByDate(view, sortOrder);
   const grid = $('records-grid');
-  if (grid) {
-    grid.innerHTML = view.length === 0 ? `
-      <div class="col-span-full text-center py-16 text-[#A6A298]">
-        <i data-lucide="filter" class="w-10 h-10 mx-auto text-[#D5D2C9] mb-4"></i>
-        <p class="text-lg font-light tracking-tight">No records found for this filter.</p>
-      </div>` : groups.map(g => dateGroupHtml(g)).join('');
-    bindDeleteButtons();
+  if (!grid) return;
+  if (filterType === 'all') {
+    // "All" = the uploaded documents themselves (no entities). Each card opens its PDF.
+    grid.className = 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 auto-rows-max pb-12';
+    setHtml(grid, docs.length
+      ? sortedDocs().map(documentCardHtml).join('')
+      : emptyHtml('file-text', 'No documents yet',
+                  'Upload a PDF or image from the Knowledge panel to begin.'));
+  } else {
+    // Entity tabs = one expandable card per source document, dated from OCR.
+    grid.className = 'grid grid-cols-1 lg:grid-cols-2 gap-5 auto-rows-max pb-12';
+    const view = records.filter(r => r.type === filterType);
+    const noun = TYPE_NOUN[filterType] || 'record';
+    setHtml(grid, view.length
+      ? entityCardsHtml(filterType, view)
+      : emptyHtml('clipboard-list', `No ${noun}s yet`,
+                  `Nothing extracted for this patient under ${noun}s.`));
   }
+  bindCardButtons();
 }
 
 const DATE_COLORS = ['#5D7B6F', '#C16D54', '#6D6E9E', '#9E6D8A', '#6D9E97', '#9E946D'];
+// Per-record-type label + the icon shown on each entity card.
+const TYPE_NOUN: Record<string, string> = {
+  disease: 'diagnosis', symptom: 'symptom', medicine: 'medication', test_result: 'result',
+};
+const TYPE_ICON: Record<string, string> = {
+  disease: 'stethoscope', symptom: 'activity', medicine: 'pill', test_result: 'flask-conical',
+};
 
 function dateColor(date: string): string {
   let h = 0;
@@ -222,53 +256,135 @@ function dateColor(date: string): string {
   return DATE_COLORS[h % DATE_COLORS.length];
 }
 
-interface DateGroup { date: string; label: string; records: ApiRecord[]; docIds: string[]; }
+function emptyHtml(icon: string, title: string, sub: string): string {
+  return `
+    <div class="col-span-full text-center py-16 text-[#A6A298]">
+      <i data-lucide="${esc(icon)}" class="w-10 h-10 mx-auto text-[#D5D2C9] mb-4"></i>
+      <p class="text-lg font-light tracking-tight text-[#59554D]">${esc(title)}</p>
+      <p class="text-sm mt-1">${esc(sub)}</p>
+    </div>`;
+}
 
-function groupByDate(rows: ApiRecord[], order: 'desc' | 'asc'): DateGroup[] {
-  const map = new Map<string, ApiRecord[]>();
-  for (const r of rows) {
-    const key = r.date ?? '';
-    (map.get(key) ?? map.set(key, []).get(key)!).push(r);
+function docTime(d: ApiDocument): number {
+  return d.date ? new Date(d.date).getTime() : 0;
+}
+
+function sortedDocs(): ApiDocument[] {
+  return [...docs].sort((a, b) =>
+    sortOrder === 'desc' ? docTime(b) - docTime(a) : docTime(a) - docTime(b));
+}
+
+// ---- "All" tab: one card per uploaded document; click opens the PDF ----
+function documentCardHtml(d: ApiDocument): string {
+  const color = d.date ? dateColor(d.date) : '#A6A298';
+  const url = docFileUrl(d.id);
+  return `
+    <div class="group bg-white rounded-2xl border border-[#E0DDD5] shadow-sm hover:shadow-md hover:border-[#5D7B6F] transition-all overflow-hidden flex flex-col" style="border-top:3px solid ${color}">
+      <a href="${esc(url)}" target="_blank" rel="noopener" class="flex-1 p-5 flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F]">
+        <div class="flex items-start justify-between gap-3">
+          <div class="w-11 h-11 rounded-xl bg-[#F5F4F0] flex items-center justify-center shrink-0">
+            <i data-lucide="file-text" class="w-5 h-5" style="color:${color}"></i>
+          </div>
+          <span class="text-[9px] font-bold uppercase tracking-widest text-[#A6A298] bg-[#F5F4F0] px-2 py-1 rounded-md whitespace-nowrap">${esc(d.type || 'file')}</span>
+        </div>
+        <div>
+          <h3 class="text-[15px] font-semibold text-[#2E2C29] leading-snug truncate" title="${esc(d.name)}">${esc(d.name)}</h3>
+          <div class="flex items-center gap-1.5 mt-2 text-[12px] text-[#8C8982] font-medium">
+            <i data-lucide="calendar" class="w-3.5 h-3.5" style="color:${color}"></i>
+            ${d.date ? esc(formatDate(d.date)) : 'Undated'}
+          </div>
+        </div>
+      </a>
+      <div class="flex items-center justify-between px-4 py-2.5 border-t border-[#F0EFEB] bg-[#FAFAF8]">
+        <a href="${esc(url)}" target="_blank" rel="noopener" class="flex items-center gap-1.5 text-[11px] font-bold text-[#5D7B6F] hover:text-[#3f5b50]">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Open PDF
+        </a>
+        <button class="del-doc text-[#C16D54] hover:text-[#a3553f] p-1.5 rounded-lg hover:bg-[#F5EDE9]" data-id="${esc(d.id)}" data-label="${esc(d.name)}" aria-label="Delete document" title="Delete document">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>`;
+}
+
+// ---- entity tabs: group a type's records by source document into dated cards ----
+interface DocGroup { docId: string; recs: ApiRecord[]; doc?: ApiDocument; date: string | null; }
+
+function entityCardsHtml(type: string, view: ApiRecord[]): string {
+  const docById = new Map(docs.map(d => [d.id, d]));
+  const groups = new Map<string, ApiRecord[]>();
+  for (const r of view) {
+    const k = r.documentId || r.id.split('-')[1] || '';
+    (groups.get(k) ?? groups.set(k, []).get(k)!).push(r);
   }
-  const keys = [...map.keys()].sort((a, b) => {
-    if (a === '') return 1;
-    if (b === '') return -1;
-    const t = new Date(a).getTime() - new Date(b).getTime();
-    return order === 'desc' ? -t : t;
+  const entries: DocGroup[] = [...groups.entries()].map(([docId, recs]) => {
+    const doc = docById.get(docId);
+    const date = doc?.date ?? recs.find(r => r.date)?.date ?? null;
+    return { docId, recs, doc, date };
   });
-  return keys.map(k => {
-    const recs = map.get(k)!;
-    const docIds = [...new Set(recs.map(r => r.id.split('-')[1]).filter(x => x && x !== 'undefined'))];
-    return { date: k, label: k ? formatDate(k) : 'Undated', records: recs, docIds };
+  entries.sort((a, b) => {
+    const ta = a.date ? new Date(a.date).getTime() : 0;
+    const tb = b.date ? new Date(b.date).getTime() : 0;
+    return sortOrder === 'desc' ? tb - ta : ta - tb;
   });
+  return entries.map(g => entityCardHtml(type, g)).join('');
 }
 
-function typeTag(t: string): string {
-  return t === 'test_result' ? '' :
-    `<span class="text-[9px] font-bold text-[#A6A298] uppercase tracking-widest mr-1.5">${esc(t.replace('_', ' '))}</span>`;
-}
-
-function dateGroupHtml(g: DateGroup): string {
+function entityCardHtml(type: string, g: DocGroup): string {
+  const key = `${type}:${g.docId}`;
+  const open = expandedCards.has(key);
   const color = g.date ? dateColor(g.date) : '#A6A298';
-  const rows = g.records.map(r => `
-      <tr class="border-t border-[#F0EFEB] hover:bg-[#FAF9F5]">
-        <td class="py-2 px-3 text-[13px] font-semibold text-[#2E2C29]">${typeTag(r.type)}${esc(r.title)}</td>
-        <td class="py-2 px-3 text-[13px] text-[#59554D] whitespace-nowrap">${esc([r.value, r.unit].filter(Boolean).join(' '))}</td>
+  const noun = TYPE_NOUN[type] || 'record';
+  const icon = TYPE_ICON[type] || 'file-text';
+  const title = g.doc?.name || (g.doc?.type ? `${g.doc.type}` : `${noun} record`);
+  const dateLabel = g.date ? formatDate(g.date) : 'Undated';
+  const n = g.recs.length;
+  const url = g.docId ? docFileUrl(g.docId) : '';
+  const body = open
+    ? `<div class="px-4 pb-4 pt-1">${type === 'test_result' ? testTableHtml(g.recs) : entityListHtml(g.recs)}
+         ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 mt-3 text-[11px] font-bold text-[#5D7B6F] hover:text-[#3f5b50]"><i data-lucide="external-link" class="w-3.5 h-3.5"></i> View source document</a>` : ''}
+       </div>`
+    : '';
+  return `
+    <div class="bg-white rounded-2xl border border-[#E0DDD5] shadow-sm hover:shadow-md transition-shadow overflow-hidden" style="border-left:4px solid ${color}">
+      <button class="card-toggle w-full text-left px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-[#FAF9F5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F]" data-key="${esc(key)}" aria-expanded="${open}">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="w-9 h-9 rounded-xl bg-[#F5F4F0] flex items-center justify-center shrink-0"><i data-lucide="${esc(icon)}" class="w-4 h-4" style="color:${color}"></i></span>
+          <div class="min-w-0">
+            <div class="text-[14px] font-semibold text-[#2E2C29] truncate" title="${esc(title)}">${esc(title)}</div>
+            <div class="flex items-center gap-1.5 text-[11px] text-[#8C8982] font-medium mt-0.5">
+              <i data-lucide="calendar" class="w-3 h-3"></i>${esc(dateLabel)}
+              <span class="w-1 h-1 rounded-full bg-[#D9D7CF]"></span>
+              ${n} ${esc(noun)}${n === 1 ? '' : 's'}
+            </div>
+          </div>
+        </div>
+        <i data-lucide="chevron-${open ? 'up' : 'down'}" class="w-4 h-4 text-[#A6A298] shrink-0"></i>
+      </button>
+      ${body}
+    </div>`;
+}
+
+function entityListHtml(recs: ApiRecord[]): string {
+  return `<div class="flex flex-col gap-1.5">${recs.map(r => `
+    <div class="flex items-center gap-2.5 py-2 px-3 bg-[#FAF9F5] rounded-lg border border-[#F0EFEB]">
+      <span class="w-1.5 h-1.5 rounded-full bg-[#5D7B6F] shrink-0"></span>
+      <span class="text-[13px] font-medium text-[#2E2C29]">${esc(r.title)}</span>
+      ${r.value ? `<span class="ml-auto text-[12px] text-[#59554D] whitespace-nowrap">${esc([r.value, r.unit].filter(Boolean).join(' '))}</span>` : ''}
+    </div>`).join('')}</div>`;
+}
+
+function testTableHtml(recs: ApiRecord[]): string {
+  const rows = recs.map(r => `
+      <tr class="border-t border-[#F0EFEB]">
+        <td class="py-2 px-3 text-[13px] font-semibold text-[#2E2C29]">${esc(r.title)}</td>
+        <td class="py-2 px-3 text-[13px] text-[#59554D] whitespace-nowrap">${esc([r.value, r.unit].filter(Boolean).join(' ')) || '\u2014'}</td>
         <td class="py-2 px-3 text-[12px] text-[#A6A298] whitespace-nowrap">${esc(r.reference || '\u2014')}</td>
       </tr>`).join('');
   return `
-    <div class="col-span-full mb-6 bg-white rounded-2xl border border-[#E0DDD5] shadow-sm overflow-hidden">
-      <div class="flex items-center justify-between px-4 py-2.5" style="border-left:4px solid ${color}">
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full" style="background:${color}"></span>
-          <span class="text-[13px] font-bold text-[#2E2C29]">${esc(g.label)}</span>
-          <span class="text-[10px] text-[#A6A298] font-bold uppercase tracking-wider">${g.records.length} record${g.records.length === 1 ? '' : 's'}</span>
-        </div>
-        ${g.docIds.length ? `<button class="del-date text-[#C16D54] hover:text-[#a3553f] p-1" data-ids="${esc(g.docIds.join(','))}" data-label="${esc(g.label)}" data-count="${g.records.length}" title="Delete this date"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}
-      </div>
+    <div class="rounded-xl border border-[#F0EFEB] overflow-hidden">
       <table class="w-full text-left">
-        <thead><tr class="text-[10px] uppercase tracking-widest text-[#A6A298]">
-          <th class="py-1.5 px-3 font-bold">Name</th>
+        <thead><tr class="text-[10px] uppercase tracking-widest text-[#A6A298] bg-[#FAFAF8]">
+          <th class="py-1.5 px-3 font-bold">Test</th>
           <th class="py-1.5 px-3 font-bold">Result</th>
           <th class="py-1.5 px-3 font-bold">Expected</th>
         </tr></thead>
@@ -277,17 +393,27 @@ function dateGroupHtml(g: DateGroup): string {
     </div>`;
 }
 
-function bindDeleteButtons() {
-  document.querySelectorAll('.del-date').forEach(btn => {
+function bindCardButtons() {
+  // Expand / collapse an entity card.
+  document.querySelectorAll('.card-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const key = (e.currentTarget as HTMLButtonElement).dataset.key!;
+      if (expandedCards.has(key)) expandedCards.delete(key); else expandedCards.add(key);
+      renderDashboard();
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    });
+  });
+  // Delete a single document (cascades to its extracted records).
+  document.querySelectorAll('.del-doc').forEach(btn => {
     btn.addEventListener('click', async e => {
+      e.preventDefault();
+      e.stopPropagation();
       const t = e.currentTarget as HTMLButtonElement;
-      const ids = (t.dataset.ids || '').split(',').filter(Boolean);
-      const label = t.dataset.label || 'this date';
-      const count = t.dataset.count || ids.length;
-      if (!ids.length) return;
-      if (!confirm(`Delete all ${count} records from ${label}? This removes the document(s) and cannot be undone.`)) return;
+      const id = t.dataset.id;
+      if (!id) return;
+      if (!confirm(`Delete "${t.dataset.label || 'this document'}" and all its extracted records? This cannot be undone.`)) return;
       try {
-        await deleteRecords(currentPatientId, ids);
+        await deleteRecords(currentPatientId, [id]);
         await loadPatientData();
         render();
       } catch (err: any) {
@@ -327,6 +453,32 @@ function renderChatbot() {
   renderDocs();
 }
 
+const INGEST_STEPS = ['Upload', 'OCR', 'Extract', 'Review', 'Index'] as const;
+
+// Map a backend node label to an ingestion step index (defensive substring match).
+function stepFromLabel(label: string): number {
+  const l = label.toLowerCase();
+  if (l.includes('index') || l.includes('chunk') || l.includes('embed')) return 4;
+  if (l.includes('confirm') || l.includes('review') || l.includes('patient')) return 3;
+  if (l.includes('extract') || l.includes('entit')) return 2;
+  if (l.includes('ocr') || l.includes('text') || l.includes('read')) return 1;
+  return 0;
+}
+
+function stepperHtml(active: number): string {
+  return `<div class="flex flex-col gap-2 py-1">${INGEST_STEPS.map((s, i) => {
+    const done = i < active, now = i === active;
+    const dot = done ? `<i data-lucide="check" class="w-3 h-3 text-white"></i>`
+      : now ? `<span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>` : '';
+    const ring = done ? 'bg-[#5D7B6F]' : now ? 'bg-[#C16D54]' : 'bg-[#E0DDD5]';
+    const txt = now ? 'font-bold text-[#2E2C29]' : done ? 'text-[#5D7B6F]' : 'text-[#A6A298]';
+    return `<div class="flex items-center gap-2.5">
+      <span class="w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${ring}">${dot}</span>
+      <span class="text-[12px] ${txt}">${s}</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 function renderMessages() {
   const el = $('chat-messages');
   if (!el) return;
@@ -338,14 +490,15 @@ function renderMessages() {
     return `
       <div class="flex flex-col gap-1.5 max-w-[90%] md:max-w-[85%] ${msg.sender === 'user' ? 'items-end ml-auto' : 'items-start'}">
         <div class="${bubble} p-3 md:p-4 text-[13px] leading-relaxed font-medium">
-          ${esc(msg.text)}${msg.live ? ' <span class="animate-pulse">▍</span>' : ''}
+          ${msg.stepper ? stepperHtml(msg.step ?? 0) : `${esc(msg.text)}${msg.live ? ' <span class="animate-pulse">▍</span>' : ''}`}
           ${msg.sources && msg.sources.length ? `
             <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[#EBEBE6]/60">
               ${msg.sources.map(s => `
-                <div class="flex items-center gap-1.5 py-1.5 px-2.5 bg-[#F5F4F0] border border-[#E0DDD5] rounded-xl text-[#2E2C29] shadow-sm">
-                  <span class="text-[8px] md:text-[9px] font-bold text-[#5D7B6F] uppercase tracking-wider">[REF]</span>
-                  <span class="text-[10px] md:text-[11px] font-bold truncate max-w-[150px]">${esc(s)}</span>
-                </div>`).join('')}
+                <a href="${esc(docFileUrl(s.document_id))}" target="_blank" rel="noopener"
+                   class="flex items-center gap-1.5 py-1.5 px-2.5 bg-[#F5F4F0] border border-[#E0DDD5] rounded-xl text-[#2E2C29] shadow-sm hover:border-[#5D7B6F] hover:bg-white transition-colors">
+                  <i data-lucide="file-text" class="w-3 h-3 text-[#5D7B6F]"></i>
+                  <span class="text-[10px] md:text-[11px] font-bold truncate max-w-[180px]">${esc(s.doc_type)}${s.date ? ' · ' + esc(formatDate(s.date)) : ''}</span>
+                </a>`).join('')}
             </div>` : ''}
         </div>
         <span class="text-[9px] md:text-[10px] text-[#A6A298] font-bold tracking-widest uppercase ${msg.sender === 'user' ? 'mr-2' : 'ml-2'}">
@@ -400,6 +553,51 @@ function interruptCardHtml(payload: any, idx: number) {
         </div>
       </div>`;
   }
+  if (payload.type === 'patient_pick') {
+    const opts = (payload.patients || []).map((p: any) =>
+      `<option value="${esc(p.name)}"></option>`).join('');
+    return `
+      <div class="bg-white rounded-3xl p-5 shadow-lg border border-[#DEDCD6]">
+        <div class="flex items-center gap-2 mb-2 text-[#C16D54]">
+          <i data-lucide="user-search" class="w-3.5 h-3.5"></i>
+          <span class="font-extrabold text-[9px] tracking-widest uppercase">Which patient?</span>
+        </div>
+        <p class="text-xs text-[#8C8982] mb-4">Question didn't name a patient. Pick who it's about.</p>
+        <input id="pp-input-${idx}" list="pp-list-${idx}" placeholder="Type a name…"
+          class="w-full bg-white border border-[#DFDDDA] rounded-md px-3 py-2 text-sm text-[#2E2C29] outline-none focus:border-[#5D7B6F] mb-3" />
+        <datalist id="pp-list-${idx}">${opts}</datalist>
+        <div class="flex gap-2.5">
+          <button data-act="pp-cancel" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] py-3 rounded-xl text-xs font-extrabold">Cancel</button>
+          <button data-act="pp-go" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Ask</button>
+        </div>
+      </div>`;
+  }
+  if (payload.type === 'confirm_edit') {
+    const ed = payload.edit || {};
+    return `
+      <div class="bg-gradient-to-br from-[#F5F4F0] to-[#E9E8E1] rounded-3xl p-5 md:p-6 shadow-lg border border-[#DEDCD6]">
+        <div class="flex items-center gap-2 mb-3 text-[#C16D54]">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+          <span class="font-extrabold text-[9px] tracking-widest uppercase">Human in the loop — verify this edit</span>
+        </div>
+        <h3 class="text-lg font-light text-[#2E2C29] mb-1 tracking-tight">Edit ${esc(ed.label || 'record')}</h3>
+        <p class="text-[11px] text-[#8C8982] mb-4">${esc(ed.doc_type || 'document')}${ed.date ? ' · ' + esc(ed.date) : ''}${ed.name ? ' · ' + esc(ed.name) : ''}</p>
+        <div class="space-y-2.5 mb-5">
+          <div class="flex gap-2 items-center">
+            <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-20 shrink-0">Current</span>
+            <span class="flex-1 bg-white border border-[#EDEBE7] rounded-md px-2.5 py-1.5 text-[12px] text-[#A6A298] line-through truncate">${esc(ed.current || '—')}</span>
+          </div>
+          <div class="flex gap-2 items-center">
+            <span class="text-[10px] font-bold text-[#5D7B6F] uppercase tracking-wider w-20 shrink-0">New value</span>
+            <input id="edit-val-${idx}" value="${esc(ed.proposed ?? '')}" class="flex-1 bg-white border border-[#DFDDDA] rounded-md px-2.5 py-1.5 text-[13px] font-semibold text-[#2E2C29] outline-none focus:border-[#5D7B6F] focus:ring-2 focus:ring-[#5D7B6F]/20" />
+          </div>
+        </div>
+        <div class="flex gap-2.5">
+          <button data-act="edit-cancel" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#C16D54] py-3 rounded-xl text-xs font-extrabold">Cancel</button>
+          <button data-act="edit-confirm" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Confirm &amp; Save</button>
+        </div>
+      </div>`;
+  }
   // low_confidence
   return `
     <div class="bg-white rounded-3xl p-5 shadow-lg border border-[#DEDCD6]">
@@ -444,6 +642,20 @@ function bindInterruptButtons() {
           ? { approved: true, extracted: collectExtracted(idx, payload.extracted),
               ...(payload.patient_id ? { patient_id: payload.patient_id } : {}) }
           : { approved: false };
+      } else if (payload.type === 'patient_pick') {
+        if (t.dataset.act === 'pp-cancel') {
+          resume = { patient_id: null };
+        } else {
+          const val = ($(`pp-input-${idx}`) as HTMLInputElement | null)?.value.trim() || '';
+          const match = (payload.patients || []).find(
+            (p: any) => p.name === val || String(p.id) === val);
+          resume = { patient_id: match ? match.id : null };
+        }
+      } else if (payload.type === 'confirm_edit') {
+        resume = t.dataset.act === 'edit-confirm'
+          ? { approved: true,
+              proposed: ($(`edit-val-${idx}`) as HTMLInputElement | null)?.value ?? payload.edit?.proposed }
+          : { approved: false };
       } else {
         resume = { proceed: t.dataset.act === 'proceed' };
       }
@@ -481,28 +693,8 @@ function renderDocs() {
       if (f) handleUpload(f);
     });
   }
-
-  const docsList = $('docs-list');
-  if (docsList) {
-    docsList.innerHTML = docs.map(doc => `
-      <div class="bg-white border border-[#EBEBE6] p-3.5 md:p-4 rounded-2xl flex items-start gap-3 md:gap-4 shadow-sm">
-        <div class="bg-[#FAF9F5] text-[#C16D54] p-3 rounded-xl shrink-0 hidden sm:block">
-          <i data-lucide="file-text" class="w-5 h-5"></i>
-        </div>
-        <div class="flex-1 overflow-hidden pt-0.5">
-          <div class="text-[13px] md:text-sm font-bold text-[#2E2C29] truncate tracking-tight" title="${esc(doc.name)}">${esc(doc.name)}</div>
-          <div class="flex flex-wrap items-center gap-1.5 mt-1.5 text-[10px] md:text-[11px] text-[#A6A298] font-bold uppercase tracking-wider">
-            <span>${esc(doc.type)}</span>
-            <span class="w-1 h-1 rounded-full bg-[#D5D2C9]"></span>
-            <span>${esc(doc.size)}</span>
-          </div>
-          ${doc.date ? `
-          <div class="mt-2.5 text-[9px] md:text-[10px] font-bold text-[#8C8982] uppercase tracking-wider flex items-center gap-1.5 bg-[#FAF9F5] inline-flex px-2 py-1 rounded-md border border-[#EBEBE6]">
-            <i data-lucide="upload-cloud" class="w-3 h-3"></i> ${esc(formatDate(doc.date))}
-          </div>` : ''}
-        </div>
-      </div>`).join('');
-  }
+  // The document list lives in the dashboard "All" tab now (document cards) —
+  // the knowledge panel only stages uploads, so no duplicate table here.
 }
 
 function renderMobileTabs() {
@@ -532,23 +724,34 @@ function liveAgent(): ChatMsg {
 
 function streamHandlers(agent: ChatMsg) {
   return {
-    onNode: (label: string) => { agent.text = label; renderMessages(); },
-    onProgress: (msg: string) => { agent.text = msg; renderMessages(); },
+    onNode: (label: string) => {
+      if (agent.stepper) { agent.step = stepFromLabel(label); }
+      else { agent.text = label; }
+      renderMessages();
+    },
+    onProgress: (msg: string) => { if (!agent.stepper) { agent.text = msg; renderMessages(); } },
     onInterrupt: (payload: any) => {
       const i = chats.indexOf(agent);
       if (i >= 0) chats.splice(i, 1);
       chats.push({ sender: 'agent', text: '', timestamp: nowIso(), interrupt: payload });
       render();
     },
-    onMessage: (m: { content: string; sources?: string[] }) => {
-      agent.text = m.content; agent.live = false; agent.sources = m.sources;
+    onMessage: (m: { content: string; sources?: CitationSource[] }) => {
+      agent.text = m.content; agent.live = false; agent.stepper = false; agent.sources = m.sources;
       renderMessages();
     },
     onError: (message: string) => {
       agent.text = `⚠️ ${message}`; agent.live = false; renderMessages();
     },
-    onDone: async () => {
-      agent.live = false;
+    onDone: async (meta?: { patient_id?: number; document_id?: number }) => {
+      agent.live = false; agent.stepper = false;
+      if (meta?.patient_id != null) {
+        // Ingest resolved/created a patient — refresh the cohort so the new
+        // patient shows up, then focus it so its records/docs render.
+        patients = await listPatients().catch(() => patients);
+        await selectPatient(String(meta.patient_id));
+        return;
+      }
       await loadPatientData();   // ingest may have added records/docs
       render();
     },
@@ -560,11 +763,14 @@ async function handleUpload(file: File) {
   stagedFileName = file.name;
   chats.push({ sender: 'user', text: `📎 ${file.name}`, timestamp: nowIso() });
   const agent = liveAgent();
+  agent.stepper = true; agent.step = 0;   // show the ingestion stepper
   render();
   try {
     const staged = await uploadFile(file);
-    await streamChat({ thread_id: threadId, message: 'Read this and arrange it.',
-      staged_path: staged.staged_path, mime: staged.mime, ext: staged.ext },
+    activeThread = newThread('ingest');   // isolate each ingestion's graph state
+    await streamChat({ thread_id: activeThread, message: 'Read this and arrange it.',
+      staged_path: staged.staged_path, mime: staged.mime, ext: staged.ext,
+      original_name: file.name },
       streamHandlers(agent));
   } catch (e: any) {
     agent.text = `⚠️ ${e.message}`; agent.live = false; renderMessages();
@@ -576,14 +782,15 @@ async function handleUpload(file: File) {
 async function runResume(resume: any) {
   const agent = liveAgent();
   render();
-  await resumeChat({ thread_id: threadId, resume }, streamHandlers(agent));
+  await resumeChat({ thread_id: activeThread, resume }, streamHandlers(agent));
 }
 
 function sendText(text: string) {
   chats.push({ sender: 'user', text, timestamp: nowIso() });
   const agent = liveAgent();
   render();
-  streamChat({ thread_id: threadId, message: text,
+  activeThread = chatThread;   // chat keeps one thread for conversation memory
+  streamChat({ thread_id: activeThread, message: text,
     patient_id: currentPatientId ? parseInt(currentPatientId, 10) : null },
     streamHandlers(agent));
 }
@@ -607,4 +814,65 @@ $('chat-form')?.addEventListener('submit', e => {
   sendText(val);
 });
 
+// ---- resizable sidebar ----
+function initSidebarResize() {
+  const sidebar = $('sidebar');
+  const handle = $('sidebar-resizer');
+  if (!sidebar || !handle) return;
+  const MIN = 200, MAX = 520;
+  const saved = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
+  if (saved >= MIN && saved <= MAX) sidebar.style.width = `${saved}px`;
+  let dragging = false;
+  const onMove = (e: MouseEvent) => {
+    if (!dragging) return;
+    const w = Math.min(MAX, Math.max(MIN, e.clientX - sidebar.getBoundingClientRect().left));
+    sidebar.style.width = `${w}px`;
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    localStorage.setItem('sidebarWidth', String(parseInt(sidebar.style.width, 10)));
+  };
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true;
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', stop);
+}
+
+// ---- resizable dashboard/chat divider ----
+function initPanelResize() {
+  const panel = $('knowledge-view');
+  const handle = $('panel-resizer');
+  if (!panel || !handle) return;
+  const MIN = 320, MAX = 760;
+  const saved = parseInt(localStorage.getItem('panelWidth') || '', 10);
+  if (saved >= MIN && saved <= MAX) panel.style.width = `${saved}px`;
+  let dragging = false;
+  const onMove = (e: MouseEvent) => {
+    if (!dragging) return;
+    // panel is on the right; width grows as the cursor moves left of its right edge.
+    const w = Math.min(MAX, Math.max(MIN, panel.getBoundingClientRect().right - e.clientX));
+    panel.style.width = `${w}px`;
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    localStorage.setItem('panelWidth', String(parseInt(panel.style.width, 10) || MIN));
+  };
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true;
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', stop);
+}
+
+initSidebarResize();
+initPanelResize();
 init();

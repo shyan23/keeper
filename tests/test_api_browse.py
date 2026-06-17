@@ -81,3 +81,27 @@ def test_delete_records_endpoint():
                     json={"document_ids": [str(did)]})
     assert r.status_code == 200, r.text
     assert r.json()["deleted"] == 1
+
+
+def test_get_document_file_404_when_missing():
+    r = client.get("/api/documents/999999/file")
+    assert r.status_code == 404
+    assert "not found" in r.json()["detail"].lower()
+
+
+def test_get_document_file_serves_existing(tmp_path):
+    db = SessionLocal()
+    try:
+        p = Patient(name="File Owner")
+        db.add(p); db.commit(); db.refresh(p)
+        f = tmp_path / "report.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+        doc = Document(patient_id=p.id, doc_type="LAB REPORT", mime_type="application/pdf",
+                       file_path=str(f), original_name="report.pdf")
+        db.add(doc); db.commit(); db.refresh(doc)
+        did = doc.id
+    finally:
+        db.close()
+    r = client.get(f"/api/documents/{did}/file")
+    assert r.status_code == 200
+    assert r.content == b"%PDF-1.4 fake"

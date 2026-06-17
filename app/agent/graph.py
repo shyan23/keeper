@@ -10,9 +10,10 @@ from app.agent.nodes.ingest import (
     extract_entities_node, extract_text_node, persist_node, resolve_patient_node,
 )
 from app.agent.nodes.structured import parse_filters_node, query_db_node
+from app.agent.nodes.edit import confirm_edit_node, plan_edit_node
 from app.agent.nodes.rag import (
     confirm_low_confidence_node, correct_query_node, generate_answer_node,
-    grade_node, rerank_node, retrieve_node, transform_query_node,
+    grade_node, require_patient_node, rerank_node, retrieve_node, transform_query_node,
 )
 
 
@@ -46,7 +47,11 @@ def build_graph(checkpointer=None):
     # structured
     g.add_node("parse_filters", parse_filters_node)
     g.add_node("query_db", query_db_node)
+    # edit (HITL-verified correction of extracted data)
+    g.add_node("plan_edit", plan_edit_node)
+    g.add_node("confirm_edit", confirm_edit_node)
     # rag
+    g.add_node("require_patient", require_patient_node)
     g.add_node("transform_query", transform_query_node)
     g.add_node("retrieve", retrieve_node)
     g.add_node("rerank", rerank_node)
@@ -59,8 +64,11 @@ def build_graph(checkpointer=None):
     g.add_conditional_edges("router", _route, {
         "ingest": "dedup_check",
         "structured_query": "parse_filters",
-        "rag_query": "transform_query",
+        "rag_query": "require_patient",
+        "edit": "plan_edit",
     })
+
+    g.add_edge("require_patient", "transform_query")
 
     # ingest chain — single approval gate (patient + entities reviewed together)
     g.add_conditional_edges("dedup_check", lambda s: s.get("dedup", "new"),
@@ -78,6 +86,12 @@ def build_graph(checkpointer=None):
     # structured chain
     g.add_edge("parse_filters", "query_db")
     g.add_edge("query_db", END)
+
+    # edit chain — plan, then a single HITL verify gate before any DB write
+    g.add_conditional_edges("plan_edit",
+                            lambda s: "confirm" if s.get("edit_target") else "end",
+                            {"confirm": "confirm_edit", "end": END})
+    g.add_edge("confirm_edit", END)
 
     # rag chain (HyDE -> retrieve -> rerank -> grade -> [CRAG correct loop] -> HITL -> answer)
     g.add_edge("transform_query", "retrieve")

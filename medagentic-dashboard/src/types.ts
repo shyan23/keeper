@@ -59,6 +59,7 @@ export interface ApiPatient {
 
 export interface ApiRecord {
   id: string;
+  documentId: string;
   patientId: string;
   type: string;
   title: string;
@@ -80,11 +81,18 @@ export interface ApiDocument {
   size: string;
 }
 
+export interface CitationSource {
+  document_id: number;
+  name: string;
+  doc_type: string;
+  date: string | null;
+}
+
 export interface SseHandlers {
   onNode?: (label: string) => void;
   onProgress?: (msg: string) => void;
   onInterrupt?: (payload: any) => void;
-  onMessage?: (msg: { role: string; content: string; sources?: string[] }) => void;
+  onMessage?: (msg: { role: string; content: string; sources?: CitationSource[] }) => void;
   onError?: (message: string) => void;
-  onDone?: () => void;
+  onDone?: (meta?: { patient_id?: number; document_id?: number }) => void;
 }
