@@ -3,7 +3,9 @@ alembic==1.14.0
 psycopg[binary]==3.2.3
 pgvector==0.3.6
 pydantic-settings==2.7.0
-streamlit==1.41.1
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
 pytest==8.3.4
 langgraph==0.2.60
 langchain-core==0.3.28
