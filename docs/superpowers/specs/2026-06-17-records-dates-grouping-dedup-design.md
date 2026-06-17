@@ -117,6 +117,22 @@ date group**.
 - `create_document_node`'s existing hash check stays as a defensive backstop (harmless;
   the early node makes it rarely reached on dupes).
 
+### 5b. Editable HITL card (correct OCR before saving)
+
+OCR/LLM extraction is imperfect; the human gate must let the reviewer **fix** the
+extracted data before it's committed, not just approve/reject.
+
+- The backend already supports this: `confirm_ingest_node` persists
+  `decision.get("extracted", ex)`, so whatever `extracted` the frontend returns on
+  resume is what gets saved. **No backend change** beyond what's already there.
+- Frontend only: the `confirm_ingest` card renders the extracted data as **editable
+  inputs** — patient name, and per test row `name / value / unit / reference`, plus
+  disease/symptom/medication names. On **Confirm**, rebuild the `extracted` dict from the
+  current input values and send it as `resume.extracted` (existing patient-id passthrough
+  unchanged). Reject path unchanged.
+- All input values are read via `.value` (no innerHTML round-trip), so no new XSS surface;
+  rendered defaults still pass through `esc()`/attribute-encoding.
+
 ### 6. Delete a date's records (backend + UI)
 
 Need to erase wrong/old data. Because the UI groups by date, deletion is per date
