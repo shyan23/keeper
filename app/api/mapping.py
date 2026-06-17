@@ -54,14 +54,17 @@ def patient_to_out(patient, last_visit: str | None) -> dict:
     }
 
 
-def _record(patient_id: str, ui_type: str, idx: int, title: str,
-            row: dict) -> dict:
+def _record(patient_id: str, ui_type: str, idx: int, title: str, row: dict,
+            value: str = "", unit: str = "", reference: str = "") -> dict:
     return {
         "id": f"{ui_type}-{row.get('document_id')}-{idx}",
         "patientId": patient_id,
         "type": ui_type,
         "title": title,
         "description": (row.get("source") or row.get("doc_type") or ""),
+        "value": value,
+        "unit": unit,
+        "reference": reference,
         "date": row.get("date"),
         "status": "Recorded",
         "severity": None,
@@ -79,9 +82,9 @@ def merge_records(patient_id: str, diseases: list[dict], symptoms: list[dict],
             out.append(_record(patient_id, ui_type, idx, r.get("name") or "", r))
             idx += 1
     for r in tests:
-        value = "".join(x for x in [r.get("value"), r.get("unit")] if x)
-        title = f"{r.get('test') or ''}: {value}".strip().rstrip(":")
-        out.append(_record(patient_id, "test_result", idx, title, r))
+        value, reference = format_value(r.get("value"), r.get("unit"), r.get("reference_range"))
+        out.append(_record(patient_id, "test_result", idx, r.get("test") or "", r,
+                           value=value, unit=(r.get("unit") or ""), reference=reference))
         idx += 1
     return out
 

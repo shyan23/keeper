@@ -52,7 +52,9 @@ def test_merge_records_maps_types_and_titles():
     med = next(r for r in rows if r["type"] == "medicine")
     assert med["title"] == "Metformin"
     tr = next(r for r in rows if r["type"] == "test_result")
-    assert tr["title"] == "HbA1c: 6.8%"
+    assert tr["title"] == "HbA1c"
+    assert tr["value"] == "6.8"
+    assert tr["unit"] == "%"
     assert all(r["patientId"] == "1" for r in rows)
     assert len({r["id"] for r in rows}) == len(rows)  # ids unique
 
@@ -92,3 +94,24 @@ def test_format_value_passthrough_text():
     val, ref = mapping.format_value("Negative", "", "")
     assert val == "Negative"
     assert ref == ""
+
+
+def test_merge_records_emits_unit_and_reference():
+    tests = [{"test": "ESR", "value": "52  0-15", "unit": "mm/1hr",
+              "reference_range": "", "source": "ESR 52", "doc_type": "lab",
+              "date": "2023-10-05", "document_id": 3}]
+    rows = mapping.merge_records("1", [], [], [], tests)
+    tr = rows[0]
+    assert tr["title"] == "ESR"
+    assert tr["value"] == "52"
+    assert tr["unit"] == "mm/1hr"
+    assert tr["reference"] == "0-15"      # peeled off the glued value
+    assert tr["date"] == "2023-10-05"
+
+
+def test_merge_records_reference_range_wins():
+    tests = [{"test": "HbA1c", "value": "6.8", "unit": "%",
+              "reference_range": "4.0-6.0", "document_id": 4}]
+    tr = mapping.merge_records("1", [], [], [], tests)[0]
+    assert tr["value"] == "6.8"
+    assert tr["reference"] == "4.0-6.0"

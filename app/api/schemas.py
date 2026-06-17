@@ -34,6 +34,9 @@ class RecordOut(BaseModel):
     type: str  # disease | symptom | medicine | test_result | treatment_plan
     title: str
     description: str
+    value: str = ""
+    unit: str = ""
+    reference: str = ""
     date: str | None = None
     status: str = "Recorded"
     severity: str | None = None
@@ -46,3 +49,7 @@ class DocumentOut(BaseModel):
     date: str | None = None
     type: str
     size: str
+
+
+class DeleteRecordsIn(BaseModel):
+    document_ids: list[str]
