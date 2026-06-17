@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -81,22 +82,24 @@ def extract_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict
 
 
 def resolve_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """No prompt — just look up name matches so the single gate can show them.
-    Pre-selects patient_id when exactly one existing patient matches the name."""
+    """Match the extracted name to existing patients. An exact (case-insensitive) single
+    match auto-resolves. A close-but-not-exact name becomes a candidate so the confirm gate
+    can ask 'same person as X?' — never silently creating a near-duplicate profile."""
     deps = config["configurable"]["deps"]
     name = (state.get("extracted") or {}).get("patient_name")
     if not name:
         return {"patient_id": None, "patient_candidates": []}
+    nlow = name.strip().lower()
     with deps.session_factory() as s:
-        matches = (
-            s.query(Patient)
-            .filter(Patient.name.ilike(name))
-            .all()
-        )
-        cands = [{"id": p.id, "name": p.name} for p in matches]
-    if len(cands) == 1:
-        return {"patient_id": cands[0]["id"], "patient_candidates": []}
-    return {"patient_id": None, "patient_candidates": cands}
+        all_p = s.query(Patient).all()
+        exact = [{"id": p.id, "name": p.name} for p in all_p
+                 if p.name.strip().lower() == nlow]
+        fuzzy = [{"id": p.id, "name": p.name} for p in all_p
+                 if p.name.strip().lower() != nlow
+                 and SequenceMatcher(None, nlow, p.name.strip().lower()).ratio() >= 0.85]
+    if len(exact) == 1:
+        return {"patient_id": exact[0]["id"], "patient_candidates": []}
+    return {"patient_id": None, "patient_candidates": exact + fuzzy}
 
 
 def confirm_ingest_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
