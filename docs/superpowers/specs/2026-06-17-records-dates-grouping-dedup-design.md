@@ -1,0 +1,126 @@
+# Records: real dates, dated grouping, clean values, early dedup — Design
+
+**Date:** 2026-06-17
+**Branch:** feat/agentic_chatbot
+**Depends on:** the UI↔backend integration (FastAPI + vanilla-TS dashboard) already landed on this branch.
+
+## Problem
+
+Three defects observed in the live dashboard:
+
+1. **Wrong dates.** Every record shows the upload date (today), not the date printed
+   on the document. Example: `CamScanner 16-6-26 11.40.pdf` is dated **Oct 5, 2023**;
+   the dengue test reads **05/10** — those are the dates that matter clinically.
+   The LLM already extracts `doc_date`, but `persist_extraction` never stores it and
+   the browse queries read `Document.uploaded_at`.
+
+2. **Reference range leaks into the value.** `TestResult.reference_range` is stored in
+   its own column, but the record card dumps the raw `source_span` (e.g. `"00-05 %"`)
+   as the body and ignores the clean fields, so the reference interval appears mixed
+   with the result. Values are also unformatted.
+
+3. **Records aren't grouped.** A flat grid mixes every test/disease/med from every
+   document and date. With multiple documents there's no way to see "all results from
+   the Oct 5 report" together.
+
+4. **Dedup fires too late.** Re-uploading the *same* PDF re-runs OCR, the extraction
+   LLM, and the human-in-the-loop gate before the `content_hash` check (buried in
+   `create_document_node`) ever runs. The duplicate should be caught from the file
+   bytes, before any of that.
+
+## Decisions (locked with the user)
+
+- **Grouping:** by report date — one section per date, newest first. Two documents on
+  the same calendar date merge into that date's section.
+- **Color:** accent color per report date (each date gets its own color), deterministic
+  so the same date renders the same color every time.
+- **Date storage:** add `Document.report_date`; derive all record dates from it.
+- **Backfill:** forward-only. Existing rows keep showing upload date until re-uploaded.
+- **Dedup:** Tier 1 only — exact `sha256` of the file bytes, checked before OCR. (No
+  simhash/near-duplicate tier.)
+
+## Design
+
+### 1. Capture the document date (backend)
+
+- **Migration `0003`:** add `document.report_date DATE NULL`.
+- **Date parsing helper** `app/services/dates.py::parse_doc_date(s) -> date | None`.
+  Handles the common shapes the OCR/LLM emits: `2023-10-05`, `05/10/2023`,
+  `5 Oct 2023`, `October 5, 2023`, `05-10-23`. Ambiguous `dd/mm` vs `mm/dd` resolves
+  **day-first** (the documents are Bangladeshi lab reports). Unparseable → `None`.
+- **`persist_extraction`** (and the ingest persist path): parse `result.doc_date`,
+  set `Document.report_date`, and set `TestResult.observed_at` from the same parsed
+  date (column already exists). `persist_extraction` gains the `document` so it can set
+  `report_date` once per ingest.
+
+### 2. Surface the date (browse queries)
+
+- `list_test_results` and `list_entity_links` select `Document.report_date` and return
+  `date = report_date or uploaded_at` (ISO `YYYY-MM-DD`). Old docs (no report_date)
+  still show their upload date; new docs show the true date.
+- Ordering switches to `report_date` desc (fallback uploaded_at) so the newest *report*
+  sorts first, not the newest upload.
+
+### 3. Clean values (mapping)
+
+`app/api/mapping.py::merge_records`:
+- Carry `unit` and `reference_range` as **separate** fields on the record dict
+  (`RecordOut` gains `unit` and `reference` optional fields).
+- `title` for a test = the test name (e.g. `HbA1c`). Body = formatted `value unit`.
+- **Value formatting** `format_value(value, unit)`:
+  - strip surrounding whitespace;
+  - if a reference interval got glued onto the value (e.g. `"52  0-15"`,
+    `"6.8 (4.0-6.0)"`), split it off — keep the leading number(s) as the value, move the
+    interval to `reference` only if `reference_range` is empty;
+  - normalize numbers (`".01"`→`"0.01"`, drop trailing `.0`), leave non-numeric values
+    (`"Negative"`, `"Positive"`) untouched.
+- `source_span` no longer renders as the card body.
+
+### 4. Group + color (frontend `main.ts`)
+
+- `renderDashboard` groups the filtered records by `date` → an ordered list of
+  `{ date, records[] }`, newest first; `null`/empty dates fall into an "Undated" group
+  last.
+- Each group renders a **section header** (`Oct 5, 2023`) plus an accent bar/border in a
+  color chosen deterministically from a fixed palette, keyed by the date string (stable
+  hash → palette index).
+- Each **card** shows: name (title), `value unit` (tests) or the entity name (others),
+  and for tests a muted `Ref: <range>` line when `reference` is present. Type filter
+  chips and the newest/oldest sort still apply (sort now reorders the date groups).
+- All dynamic strings stay wrapped in `esc()` (XSS guard).
+
+### 5. Early dedup (ingest graph)
+
+- **New node `dedup_check`** inserted after `router` (ingest branch) and **before**
+  `extract_text`:
+  - read staged bytes, compute `sha256`, `find_by_content_hash`;
+  - **hit:** set `already_ingested=True`, reuse `document_id`/`patient_id`, delete the
+    staged file, and route to the terminal "already on file" reply — **skipping OCR,
+    extraction, and the HITL gate**;
+  - **miss:** pass the computed `content_hash` forward and continue to `extract_text`.
+- **Graph wiring:** conditional edge out of `dedup_check`: `duplicate → END` (after the
+  skip message), `new → extract_text`. `extract_text_node` no longer needs to compute the
+  hash (it's already in state); it keeps working if it's still set there.
+- `create_document_node`'s existing hash check stays as a defensive backstop (harmless;
+  the early node makes it rarely reached on dupes).
+
+## Testing (TDD)
+
+- `parse_doc_date`: table of input strings → expected `date`/`None`, incl. day-first.
+- `format_value`: glued-reference split, number normalization, non-numeric passthrough.
+- `persist_extraction`: sets `Document.report_date` and `TestResult.observed_at` from
+  `doc_date`; `None` when absent/unparseable.
+- browse: a doc with `report_date` returns that date and sorts before an older-reported
+  doc uploaded later.
+- `merge_records`: emits separate `unit`/`reference`, formatted value, no source span in
+  body.
+- dedup: a second ingest of identical bytes hits `dedup_check` → `already_ingested`, and
+  the fake graph never reaches `extract_text`/`confirm_ingest`.
+- frontend: `tsc --noEmit` clean; grouping helper unit-tested if extracted as a pure fn.
+
+## Out of scope
+
+- Near-duplicate (simhash) detection.
+- Backfilling report dates onto existing rows.
+- Abnormal-value (out-of-range) color coding.
+- Re-OCR of already-ingested documents.
