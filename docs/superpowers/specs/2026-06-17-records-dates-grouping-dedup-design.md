@@ -76,17 +76,30 @@ Three defects observed in the live dashboard:
     (`"Negative"`, `"Positive"`) untouched.
 - `source_span` no longer renders as the card body.
 
-### 4. Group + color (frontend `main.ts`)
+### 4. Group + table (frontend `main.ts`)
+
+No more card-per-record (100 tests must not be 100 boxes). Render a **compact table per
+date group**.
 
 - `renderDashboard` groups the filtered records by `date` → an ordered list of
   `{ date, records[] }`, newest first; `null`/empty dates fall into an "Undated" group
   last.
-- Each group renders a **section header** (`Oct 5, 2023`) plus an accent bar/border in a
-  color chosen deterministically from a fixed palette, keyed by the date string (stable
-  hash → palette index).
-- Each **card** shows: name (title), `value unit` (tests) or the entity name (others),
-  and for tests a muted `Ref: <range>` line when `reference` is present. Type filter
-  chips and the newest/oldest sort still apply (sort now reorders the date groups).
+- Each group renders a slim **header row** — the date (`Oct 5, 2023`) + doc type, with a
+  small accent dot/left-border colored deterministically per date (stable hash → fixed
+  palette index) and a trash button (section 6) — followed by a **table**:
+
+  | Name | Result | Expected |
+  |------|--------|----------|
+  | tests | `value unit` | `reference` |
+  | disease/symptom/medicine | name | — (Result/Expected blank) |
+
+  Columns: **Name**, **Result** (`value unit` for tests; the entity name doubles as Name
+  so Result is blank for non-tests), **Expected** (`reference` for tests, else blank). A
+  tiny type tag in the Name cell keeps disease/symptom/medicine distinguishable.
+- Dense rows, minimal chrome — borders + zebra at most, no per-row shadows/padding-heavy
+  boxes. The table scrolls inside the records pane.
+- Type filter chips and newest/oldest sort still apply (sort reorders the date groups;
+  filter narrows the rows; an empty group is hidden).
 - All dynamic strings stay wrapped in `esc()` (XSS guard).
 
 ### 5. Early dedup (ingest graph)
