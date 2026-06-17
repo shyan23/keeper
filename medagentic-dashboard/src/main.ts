@@ -360,30 +360,43 @@ function renderMessages() {
 function interruptCardHtml(payload: any, idx: number) {
   if (payload.type === 'confirm_ingest') {
     const ex = payload.extracted || {};
-    const name = ex.patient_name || 'New patient';
-    const summary: string[] = [];
-    (ex.tests || []).forEach((t: any) =>
-      summary.push(`${t.name}: ${t.value ?? ''}${t.unit ?? ''}`));
-    ['diseases', 'symptoms', 'medications'].forEach(k =>
-      (ex[k] || []).forEach((i: any) => summary.push(i.name)));
+    const name = ex.patient_name || '';
+    const tests = ex.tests || [];
+    const inp = (id: string, val: unknown, ph: string, cls = '') =>
+      `<input id="${id}" value="${esc(val ?? '')}" placeholder="${esc(ph)}" class="${cls} bg-white border border-[#DFDDDA] rounded-md px-2 py-1 text-[12px] text-[#2E2C29] outline-none focus:border-[#5D7B6F]" />`;
+    const testRows = tests.map((t: any, j: number) => `
+        <div class="flex gap-1.5 items-center">
+          ${inp(`int-t-${idx}-${j}-n`, t.name, 'test', 'flex-[2]')}
+          ${inp(`int-t-${idx}-${j}-v`, t.value, 'value', 'flex-1')}
+          ${inp(`int-t-${idx}-${j}-u`, t.unit, 'unit', 'w-16')}
+          ${inp(`int-t-${idx}-${j}-r`, t.reference_range, 'ref', 'w-20')}
+        </div>`).join('');
+    const nameRows = (k: string) => (ex[k] || []).map((it: any, j: number) =>
+      inp(`int-${k}-${idx}-${j}`, it.name, k, 'w-full')).join('');
     return `
       <div class="bg-gradient-to-br from-[#F5F4F0] to-[#E9E8E1] rounded-3xl p-5 md:p-6 shadow-lg border border-[#DEDCD6]">
         <div class="flex items-center gap-2 mb-3 text-[#C16D54]">
           <i data-lucide="user" class="w-3.5 h-3.5"></i>
-          <span class="font-extrabold text-[9px] md:text-[10px] tracking-widest uppercase">Human in the loop</span>
+          <span class="font-extrabold text-[9px] tracking-widest uppercase">Human in the loop — edit then confirm</span>
         </div>
-        <h3 class="text-xl font-light text-[#2E2C29] mb-4 tracking-tight">Verify Extraction</h3>
-        <div class="space-y-1.5 mb-5 bg-white/70 p-2 rounded-2xl border border-white">
-          <div class="flex justify-between items-center p-2.5">
-            <div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider">Patient</div>
-            <div class="text-sm font-bold text-[#2E2C29] bg-[#EBE9E4] px-2.5 py-1 rounded-md">${esc(name)}</div>
+        <h3 class="text-xl font-light text-[#2E2C29] mb-4 tracking-tight">Verify &amp; Correct Extraction</h3>
+        <div class="space-y-3 mb-5">
+          <div class="flex gap-2 items-center">
+            <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-16">Patient</span>
+            ${inp(`int-name-${idx}`, name, 'patient name', 'flex-1')}
           </div>
-          ${summary.slice(0, 6).map(s => `
-            <div class="flex justify-between items-center p-2.5 text-[#59554D] text-xs font-semibold">${esc(s)}</div>`).join('')}
+          <div class="flex gap-2 items-center">
+            <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-16">Date</span>
+            ${inp(`int-date-${idx}`, ex.doc_date, 'YYYY-MM-DD', 'flex-1')}
+          </div>
+          ${tests.length ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">Tests</div><div class="space-y-1.5">${testRows}</div></div>` : ''}
+          ${(ex.diseases || []).length ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">Diseases</div><div class="space-y-1.5">${nameRows('diseases')}</div></div>` : ''}
+          ${(ex.symptoms || []).length ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">Symptoms</div><div class="space-y-1.5">${nameRows('symptoms')}</div></div>` : ''}
+          ${(ex.medications || []).length ? `<div class="pt-1"><div class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider mb-1">Medications</div><div class="space-y-1.5">${nameRows('medications')}</div></div>` : ''}
         </div>
         <div class="flex gap-2.5">
           <button data-act="reject" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#C16D54] py-3 rounded-xl text-xs font-extrabold">Reject</button>
-          <button data-act="confirm" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Confirm & Feed Layer</button>
+          <button data-act="confirm" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Confirm &amp; Feed Layer</button>
         </div>
       </div>`;
   }
@@ -399,6 +412,25 @@ function interruptCardHtml(payload: any, idx: number) {
     </div>`;
 }
 
+function collectExtracted(idx: number, base: any): any {
+  const ex = JSON.parse(JSON.stringify(base || {}));
+  const g = (id: string) => ($(id) as HTMLInputElement | null)?.value;
+  const nm = g(`int-name-${idx}`); if (nm !== undefined) ex.patient_name = nm;
+  const dt = g(`int-date-${idx}`); if (dt !== undefined) ex.doc_date = dt;
+  (ex.tests || []).forEach((t: any, j: number) => {
+    const n = g(`int-t-${idx}-${j}-n`); if (n !== undefined) t.name = n;
+    const v = g(`int-t-${idx}-${j}-v`); if (v !== undefined) t.value = v;
+    const u = g(`int-t-${idx}-${j}-u`); if (u !== undefined) t.unit = u;
+    const r = g(`int-t-${idx}-${j}-r`); if (r !== undefined) t.reference_range = r;
+  });
+  ['diseases', 'symptoms', 'medications'].forEach(k => {
+    (ex[k] || []).forEach((it: any, j: number) => {
+      const val = g(`int-${k}-${idx}-${j}`); if (val !== undefined) it.name = val;
+    });
+  });
+  return ex;
+}
+
 function bindInterruptButtons() {
   document.querySelectorAll('.int-btn').forEach(btn => {
     btn.addEventListener('click', e => {
@@ -406,16 +438,16 @@ function bindInterruptButtons() {
       const idx = parseInt(t.dataset.idx!, 10);
       const payload = chats[idx]?.interrupt;
       if (!payload) return;
-      chats.splice(idx, 1); // remove the card
       let resume: any;
       if (payload.type === 'confirm_ingest') {
         resume = t.dataset.act === 'confirm'
-          ? { approved: true, extracted: payload.extracted,
+          ? { approved: true, extracted: collectExtracted(idx, payload.extracted),
               ...(payload.patient_id ? { patient_id: payload.patient_id } : {}) }
           : { approved: false };
       } else {
         resume = { proceed: t.dataset.act === 'proceed' };
       }
+      chats.splice(idx, 1); // remove the card (after reading its inputs)
       runResume(resume);
     });
   });
