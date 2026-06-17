@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" class="h-full w-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>MedAgentic Application</title>
+    <!-- Use Lucide for pure HTML/JS icon rendering -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="/src/index.css" />
+  </head>
+  <body class="flex flex-col lg:flex-row h-[100dvh] w-full bg-[#FAFAF8] font-sans text-[#2E2C29] overflow-hidden m-0">
+    
+    <!-- Mobile Header Navigation -->
+    <div class="lg:hidden flex border-b border-[#EBEBE6] bg-[#F5F4F0] p-3 items-center justify-between z-10 shrink-0 shadow-sm">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-gradient-to-br from-[#698A7D] to-[#4F6D61] rounded-lg flex items-center justify-center font-bold text-white text-sm shadow-md">M</div>
+        <div class="relative">
+          <select id="mobile-patient-select" class="bg-transparent font-bold text-[#2E2C29] text-base focus:outline-none appearance-none pr-4"></select>
+        </div>
+      </div>
+      <div class="flex bg-[#EBEBE6] rounded-lg p-1 shadow-inner">
+        <button id="tab-dashboard" class="px-3 py-1.5 text-xs font-bold rounded-md transition-all bg-white shadow-sm text-[#2E2C29]">Dashboard</button>
+        <button id="tab-knowledge" class="px-3 py-1.5 text-xs font-bold rounded-md transition-all text-[#8C8982]">Knowledge</button>
+      </div>
+    </div>
+
+    <!-- Desktop Sidebar -->
+    <div class="hidden lg:flex w-72 bg-[#1A1D1B] flex-col h-full overflow-y-auto border-r border-[#121413] shrink-0">
+      <div class="p-6">
+        <h2 class="text-xl font-bold text-[#F5F4F0] flex items-center gap-3 tracking-tight">
+          <div class="w-8 h-8 bg-gradient-to-br from-[#698A7D] to-[#4F6D61] rounded-lg flex items-center justify-center font-bold text-white shadow-inner">
+            <i data-lucide="activity" class="w-4 h-4"></i>
+          </div>
+          MedAgentic
+        </h2>
+        <p class="text-sm text-[#878985] mt-2 font-medium">Provider Dashboard</p>
+      </div>
+      <div class="p-4 mt-2">
+        <div class="text-[10px] font-bold text-[#6D716E] uppercase tracking-widest mb-4 px-3">Patient Cohort</div>
+        <div id="patient-list" class="space-y-1"></div>
+      </div>
+      <div class="mt-auto p-6 border-t border-[#232725] bg-[#171918]">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 bg-[#2A2E2C] rounded-full flex shrink-0 items-center justify-center text-[#A2A5A0] shadow-sm border border-[#393E3A]">
+             <i data-lucide="user" class="w-4 h-4"></i>
+          </div>
+          <div class="text-sm text-left">
+            <p class="text-[#F5F4F0] font-semibold leading-none">Dr. Julian Vane</p>
+            <p class="text-[#6D716E] text-[11px] font-bold uppercase tracking-wider mt-1">Oncology Lead</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Patient Dashboard Area -->
+    <div id="dashboard-view" class="flex-1 overflow-hidden flex flex-col bg-[#FAFAF8]">
+      <div class="min-h-[5rem] shrink-0 bg-[#FAFAF8] border-b border-[#EBEBE6] px-4 md:px-8 py-4 flex flex-col md:flex-row md:items-center justify-between sticky top-0 z-10 gap-4">
+        <div class="flex items-center gap-3 md:gap-4">
+           <img id="header-patient-img" src="" alt="" class="w-12 h-12 md:w-10 md:h-10 rounded-full object-cover ring-2 ring-white shadow-sm" />
+           <div class="flex-1 overflow-hidden">
+             <h1 id="header-patient-name" class="text-xl md:text-2xl font-light text-[#2E2C29] tracking-tight truncate"></h1>
+             <div id="header-patient-meta" class="text-[10px] md:text-xs font-semibold text-[#8C8982] flex items-center gap-1.5 md:gap-3 mt-1 uppercase tracking-wider truncate text-ellipsis"></div>
+           </div>
+        </div>
+        <div class="flex items-center justify-end gap-3 self-start md:self-auto w-full md:w-auto mt-2 md:mt-0">
+           <div class="text-[10px] md:text-xs font-bold text-[#8C8982] uppercase tracking-wider bg-white border border-[#EBEBE6] px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 w-full md:w-auto justify-center">
+              <i data-lucide="calendar" class="w-3.5 h-3.5 text-[#5D7B6F]"></i>
+              Updated: <span id="header-patient-date"></span>
+           </div>
+        </div>
+      </div>
+
+      <div class="p-4 md:p-8 overflow-y-auto flex-1 hide-scrollbar">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between mb-8 gap-4">
+          <h2 class="text-xl md:text-2xl font-light text-[#2E2C29] tracking-tight">Clinical Records</h2>
+          <div class="flex flex-col sm:flex-row flex-wrap gap-3">
+             <div id="filter-buttons" class="flex bg-[#F0EFEB] rounded-xl p-1 shadow-inner overflow-x-auto hide-scrollbar w-full sm:w-auto"></div>
+             <button id="sort-btn" class="flex items-center justify-center gap-2 px-4 py-1.5 bg-white border border-[#EBEBE6] text-[#2E2C29] rounded-xl shadow-sm hover:bg-[#F5F4F0] transition-colors text-xs font-bold whitespace-nowrap w-full sm:w-auto">
+                <i data-lucide="arrow-up-down" class="w-3.5 h-3.5 text-[#5D7B6F]"></i>
+                <span id="sort-label">Newest</span>
+             </button>
+          </div>
+        </div>
+        <div id="records-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 auto-rows-max pb-12"></div>
+      </div>
+    </div>
+
+    <!-- Agentic Chatbot / Knowledge Base -->
+    <div id="knowledge-view" class="hidden lg:flex w-full lg:w-[450px] shadow-2xl lg:shadow-[none] border-t lg:border-t-0 lg:border-l border-[#EBEBE6] bg-[#FAF9F5] z-20 flex-col overflow-hidden shrink-0 h-full">
+      <div class="flex border-b border-[#EBEBE6] bg-[#FAFAF8] shrink-0">
+        <button id="panel-tab-chat" class="flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all border-b-[3px] border-[#5D7B6F] text-[#2E2C29]">
+          <div class="w-2 h-2 rounded-full bg-[#5D7B6F]"></div> Agentic AI
+        </button>
+        <button id="panel-tab-docs" class="flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all border-b-[3px] border-transparent text-[#A6A298] hover:text-[#2E2C29] hover:bg-[#F5F4F0]">
+          <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> Knowledge
+        </button>
+      </div>
+
+      <div id="view-chat" class="flex-1 flex flex-col relative overflow-hidden">
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar"></div>
+        <div class="p-3 md:p-4 bg-[#FAFAF8] border-t border-[#EBEBE6] shrink-0">
+          <form id="chat-form" class="relative flex items-center">
+            <input id="chat-input" type="text" placeholder="Ask about clinical data..." class="w-full bg-white border border-[#EBEBE6] rounded-full py-3 md:py-4 pl-5 pr-14 text-[13px] md:text-sm text-[#2E2C29] focus:ring-4 focus:ring-[#5D7B6F]/20 focus:border-[#5D7B6F] outline-none placeholder:text-[#A6A298] shadow-sm font-medium transition-all" />
+            <button type="submit" class="absolute right-1.5 w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white rounded-full flex items-center justify-center shadow-md transition-all hover:scale-105 active:scale-95 disabled:opacity-50" id="send-btn" disabled>
+              <i data-lucide="send" class="w-4 h-4 ml-0.5"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div id="view-docs" class="hidden flex-1 flex-col p-4 md:p-6 overflow-y-auto relative hide-scrollbar">
+        <div id="upload-container"></div>
+        <div class="text-[10px] font-extrabold text-[#A6A298] uppercase tracking-widest mt-4 mb-4 pl-1">Active Context</div>
+        <div id="docs-list" class="space-y-3 pb-8"></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+       const inp = document.getElementById('chat-input');
+       const btn = document.getElementById('send-btn');
+       inp.addEventListener('input', () => {
+         btn.disabled = inp.value.trim() === '';
+       });
+    </script>
+  </body>
+</html>

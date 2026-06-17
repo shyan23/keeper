@@ -1,0 +1,6 @@
+{
+  "name": "MedAgentic Dashboard",
+  "description": "Medical dashboard placeholder with RAG agentic chatbot interface.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
