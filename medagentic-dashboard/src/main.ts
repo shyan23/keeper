@@ -386,9 +386,9 @@ function entityListHtml(recs: ApiRecord[]): string {
 function testTableHtml(recs: ApiRecord[]): string {
   const rows = recs.map(r => `
       <tr class="border-t border-[#F0EFEB]">
-        <td class="py-2 px-3 text-[13px] font-semibold text-[#2E2C29]">${esc(r.title)}</td>
-        <td class="py-2 px-3 text-[13px] text-[#59554D] whitespace-nowrap">${esc([r.value, r.unit].filter(Boolean).join(' ')) || '\u2014'}</td>
-        <td class="py-2 px-3 text-[12px] text-[#A6A298] whitespace-nowrap">${esc(r.reference || '\u2014')}</td>
+        <td class="py-2 px-3 text-[13px] font-semibold text-[#2E2C29] align-top">${esc(r.title)}</td>
+        <td class="py-2 px-3 text-[13px] text-[#59554D] align-top whitespace-normal break-words">${esc([r.value, r.unit].filter(Boolean).join(' ')) || '\u2014'}</td>
+        <td class="py-2 px-3 text-[12px] text-[#A6A298] whitespace-nowrap align-top">${esc(r.reference || '\u2014')}</td>
       </tr>`).join('');
   return `
     <div class="rounded-xl border border-[#F0EFEB] overflow-hidden">
@@ -559,8 +559,17 @@ function interruptCardHtml(payload: any, idx: number) {
     const reportBlock = (seg: any, s: number) => {
       const e = seg.extracted || {};
       const tests = e.tests || [];
-      const testRows = tests.map((t: any, j: number) => `
-        <div class="flex gap-1.5 items-center">
+      // A row with no unit and no reference range is a narrative finding
+      // (e.g. X-ray "Heart: normal"), not a numeric lab value -> show a wide
+      // result field and drop the unit/ref columns. Numeric labs keep 4 cols.
+      const isFinding = (t: any) => !t.unit && !t.reference_range;
+      const allFindings = tests.length > 0 && tests.every(isFinding);
+      const testRows = tests.map((t: any, j: number) => isFinding(t)
+        ? `<div class="flex gap-1.5 items-center">
+          ${inp(`int-t-${idx}-${s}-${j}-n`, t.name, 'finding', 'flex-[2]')}
+          ${inp(`int-t-${idx}-${s}-${j}-v`, t.value, 'result', 'flex-[3]')}
+        </div>`
+        : `<div class="flex gap-1.5 items-center">
           ${inp(`int-t-${idx}-${s}-${j}-n`, t.name, 'test', 'flex-[2]')}
           ${inp(`int-t-${idx}-${s}-${j}-v`, t.value, 'value', 'flex-1')}
           ${inp(`int-t-${idx}-${s}-${j}-u`, t.unit, 'unit', 'w-16')}
@@ -589,7 +598,7 @@ function interruptCardHtml(payload: any, idx: number) {
               <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-12 shrink-0">Date</span>
               ${inp(`int-rdate-${idx}-${s}`, seg.date, 'YYYY-MM-DD', 'flex-1')}
             </div>
-            ${sect('Tests', testRows)}
+            ${sect(allFindings ? 'Findings' : 'Tests', testRows)}
             ${sect('Diseases', entityRows(s, 'diseases', e))}
             ${sect('Symptoms', entityRows(s, 'symptoms', e))}
             ${sect('Medications', entityRows(s, 'medications', e))}

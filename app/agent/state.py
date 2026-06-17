@@ -22,6 +22,21 @@ class ExtractedTest(BaseModel):
     confidence: float = 0.5
     source_span: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _stringify(cls, data: Any) -> Any:
+        # Groq often returns a numeric result (value=60, reference_range=12-16)
+        # as a JSON number; the schema stores these as strings. Coerce so a bare
+        # number doesn't fail validation.
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for f in ("value", "unit", "reference_range"):
+            v = out.get(f)
+            if isinstance(v, (int, float)):
+                out[f] = str(v)
+        return out
+
 
 _SCALAR_FIELDS = ("patient_name", "patient_age", "patient_gender",
                   "doc_type", "doc_date", "doctor")

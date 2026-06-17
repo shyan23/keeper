@@ -36,6 +36,15 @@ Only the list items in diseases, symptoms, medications and tests are objects wit
 a name plus confidence (0-1) and source_span (the exact text you used).
 If a field is absent, leave it null/empty.
 
+The `tests` list holds BOTH numeric lab results and narrative findings:
+- Numeric lab result (CBC, lipid, biochemistry…): name=test, value=the number,
+  unit=the unit, reference_range=the normal range.
+- Narrative finding (X-ray, ultrasound/USG, CT, MRI, ECG, echo, any imaging or
+  descriptive report): make ONE entry per finding line — name=the finding label
+  (e.g. "Diaphragm", "Heart", "Lung fields", "Bony thorax", "Impression"),
+  value=the finding text verbatim, and leave unit and reference_range null.
+  Never collapse a whole imaging report into a single "X-Ray" entry.
+
 Document:
 {text}"""
 
@@ -80,7 +89,8 @@ def dedup_check_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str,
 
 def _extract_one(deps, text: str) -> dict[str, Any]:
     # Cache structured extraction by (model, text): re-ingest skips the slow LLM call.
-    key = make_key(f"extract:{get_settings().ollama_model}", text)
+    # v2: prompt now breaks narrative/imaging reports into labeled findings.
+    key = make_key(f"extract:v2:{get_settings().ollama_model}", text)
     return get_or_set(
         key,
         lambda: deps.chat.structured(
