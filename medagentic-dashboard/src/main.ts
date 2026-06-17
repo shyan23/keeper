@@ -221,20 +221,19 @@ function renderDashboard() {
 
   const grid = $('records-grid');
   if (!grid) return;
+  // One clean column holding a single minimalist table — scales to many documents
+  // without the card grid getting noisy.
+  grid.className = 'grid grid-cols-1 gap-4 pb-12';
   if (filterType === 'all') {
-    // "All" = the uploaded documents themselves (no entities). Each card opens its PDF.
-    grid.className = 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 auto-rows-max pb-12';
     setHtml(grid, docs.length
-      ? sortedDocs().map(documentCardHtml).join('')
+      ? documentsTableHtml(sortedDocs())
       : emptyHtml('file-text', 'No documents yet',
                   'Upload a PDF or image from the Knowledge panel to begin.'));
   } else {
-    // Entity tabs = one expandable card per source document, dated from OCR.
-    grid.className = 'grid grid-cols-1 lg:grid-cols-2 gap-5 auto-rows-max pb-12';
     const view = records.filter(r => r.type === filterType);
     const noun = TYPE_NOUN[filterType] || 'record';
     setHtml(grid, view.length
-      ? entityCardsHtml(filterType, view)
+      ? entityTableHtml(filterType, view)
       : emptyHtml('clipboard-list', `No ${noun}s yet`,
                   `Nothing extracted for this patient under ${noun}s.`));
   }
@@ -245,9 +244,6 @@ const DATE_COLORS = ['#5D7B6F', '#C16D54', '#6D6E9E', '#9E6D8A', '#6D9E97', '#9E
 // Per-record-type label + the icon shown on each entity card.
 const TYPE_NOUN: Record<string, string> = {
   disease: 'diagnosis', symptom: 'symptom', medicine: 'medication', test_result: 'result',
-};
-const TYPE_ICON: Record<string, string> = {
-  disease: 'stethoscope', symptom: 'activity', medicine: 'pill', test_result: 'flask-conical',
 };
 
 function dateColor(date: string): string {
@@ -274,42 +270,51 @@ function sortedDocs(): ApiDocument[] {
     sortOrder === 'desc' ? docTime(b) - docTime(a) : docTime(a) - docTime(b));
 }
 
-// ---- "All" tab: one card per uploaded document; click opens the PDF ----
-function documentCardHtml(d: ApiDocument): string {
-  const color = d.date ? dateColor(d.date) : '#A6A298';
-  const url = docFileUrl(d.id);
+// ---- "All" tab: minimalist document table; each row opens the PDF ----
+function tableShell(headCols: string, rows: string): string {
   return `
-    <div class="group bg-white rounded-2xl border border-[#E0DDD5] shadow-sm hover:shadow-md hover:border-[#5D7B6F] transition-all overflow-hidden flex flex-col" style="border-top:3px solid ${color}">
-      <a href="${esc(url)}" target="_blank" rel="noopener" class="flex-1 p-5 flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F]">
-        <div class="flex items-start justify-between gap-3">
-          <div class="w-11 h-11 rounded-xl bg-[#F5F4F0] flex items-center justify-center shrink-0">
-            <i data-lucide="file-text" class="w-5 h-5" style="color:${color}"></i>
-          </div>
-          <span class="text-[9px] font-bold uppercase tracking-widest text-[#A6A298] bg-[#F5F4F0] px-2 py-1 rounded-md whitespace-nowrap">${esc(d.type || 'file')}</span>
+    <div class="bg-white rounded-2xl border border-[#E0DDD5] shadow-sm overflow-hidden">
+      <div class="overflow-x-auto">
+        <div class="min-w-[420px]">
+          <div class="sticky top-0 bg-[#FAFAF8] border-b border-[#EBEBE6] z-[1]">${headCols}</div>
+          ${rows}
         </div>
-        <div>
-          <h3 class="text-[15px] font-semibold text-[#2E2C29] leading-snug truncate" title="${esc(d.name)}">${esc(d.name)}</h3>
-          <div class="flex items-center gap-1.5 mt-2 text-[12px] text-[#8C8982] font-medium">
-            <i data-lucide="calendar" class="w-3.5 h-3.5" style="color:${color}"></i>
-            ${d.date ? esc(formatDate(d.date)) : 'Undated'}
-          </div>
-        </div>
-      </a>
-      <div class="flex items-center justify-between px-4 py-2.5 border-t border-[#F0EFEB] bg-[#FAFAF8]">
-        <a href="${esc(url)}" target="_blank" rel="noopener" class="flex items-center gap-1.5 text-[11px] font-bold text-[#5D7B6F] hover:text-[#3f5b50]">
-          <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Open PDF
-        </a>
-        <button class="del-doc text-[#C16D54] hover:text-[#a3553f] p-1.5 rounded-lg hover:bg-[#F5EDE9]" data-id="${esc(d.id)}" data-label="${esc(d.name)}" aria-label="Delete document" title="Delete document">
-          <i data-lucide="trash-2" class="w-4 h-4"></i>
-        </button>
       </div>
     </div>`;
 }
 
-// ---- entity tabs: group a type's records by source document into dated cards ----
+function documentsTableHtml(list: ApiDocument[]): string {
+  const head = `
+    <div class="grid grid-cols-[1fr_5.5rem_6rem_4.5rem] sm:grid-cols-[1fr_8rem_7rem_5rem] gap-3 items-center px-4 h-10 text-[10px] uppercase tracking-widest text-[#A6A298] font-bold">
+      <span>Document</span><span>Type</span><span class="text-right">Date</span><span class="text-right">Actions</span>
+    </div>`;
+  const rows = list.map(d => {
+    const color = d.date ? dateColor(d.date) : '#A6A298';
+    const url = docFileUrl(d.id);
+    return `
+      <div class="group grid grid-cols-[1fr_5.5rem_6rem_4.5rem] sm:grid-cols-[1fr_8rem_7rem_5rem] gap-3 items-center px-4 min-h-[44px] py-1.5 border-b border-[#F4F3EF] last:border-0 hover:bg-[#FAF9F5] transition-colors duration-150">
+        <a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(d.name)}"
+           class="flex items-center gap-2.5 min-w-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F] focus-visible:ring-offset-1">
+          <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${color}"></span>
+          <i data-lucide="file-text" class="w-4 h-4 text-[#8C8982] shrink-0"></i>
+          <span class="text-[13px] font-semibold text-[#2E2C29] truncate">${esc(d.name)}</span>
+        </a>
+        <span class="text-[9px] font-bold uppercase tracking-widest text-[#7E8B83] bg-[#EEF1EF] px-2 py-1 rounded-md truncate justify-self-start">${esc(d.type || 'file')}</span>
+        <span class="text-[12px] text-[#59554D] tabular-nums text-right whitespace-nowrap">${d.date ? esc(formatDate(d.date)) : '—'}</span>
+        <span class="flex items-center gap-0.5 justify-end">
+          <a href="${esc(url)}" target="_blank" rel="noopener" aria-label="Open PDF" title="Open PDF"
+             class="w-9 h-9 flex items-center justify-center text-[#5D7B6F] hover:text-[#3f5b50] rounded-lg hover:bg-[#EEF2F0] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F]"><i data-lucide="external-link" class="w-4 h-4"></i></a>
+          <button class="del-doc w-9 h-9 flex items-center justify-center text-[#C0857A] hover:text-[#a3553f] rounded-lg hover:bg-[#F5EDE9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C16D54]" data-id="${esc(d.id)}" data-label="${esc(d.name)}" aria-label="Delete document" title="Delete"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+        </span>
+      </div>`;
+  }).join('');
+  return tableShell(head, rows);
+}
+
+// ---- entity tabs: group a type's records per source document; expandable rows ----
 interface DocGroup { docId: string; recs: ApiRecord[]; doc?: ApiDocument; date: string | null; }
 
-function entityCardsHtml(type: string, view: ApiRecord[]): string {
+function groupByDoc(view: ApiRecord[]): DocGroup[] {
   const docById = new Map(docs.map(d => [d.id, d]));
   const groups = new Map<string, ApiRecord[]>();
   for (const r of view) {
@@ -326,41 +331,46 @@ function entityCardsHtml(type: string, view: ApiRecord[]): string {
     const tb = b.date ? new Date(b.date).getTime() : 0;
     return sortOrder === 'desc' ? tb - ta : ta - tb;
   });
-  return entries.map(g => entityCardHtml(type, g)).join('');
+  return entries;
 }
 
-function entityCardHtml(type: string, g: DocGroup): string {
+function entityTableHtml(type: string, view: ApiRecord[]): string {
+  const noun = TYPE_NOUN[type] || 'record';
+  const head = `
+    <div class="grid grid-cols-[1fr_6rem_3.5rem] sm:grid-cols-[1fr_7rem_4rem] gap-3 items-center px-4 h-10 text-[10px] uppercase tracking-widest text-[#A6A298] font-bold">
+      <span>Report</span><span class="text-right">Date</span><span class="text-right">${esc(noun)}s</span>
+    </div>`;
+  const rows = groupByDoc(view).map(g => entityRowHtml(type, g)).join('');
+  return tableShell(head, rows);
+}
+
+function entityRowHtml(type: string, g: DocGroup): string {
   const key = `${type}:${g.docId}`;
   const open = expandedCards.has(key);
   const color = g.date ? dateColor(g.date) : '#A6A298';
   const noun = TYPE_NOUN[type] || 'record';
-  const icon = TYPE_ICON[type] || 'file-text';
   const title = g.doc?.name || (g.doc?.type ? `${g.doc.type}` : `${noun} record`);
-  const dateLabel = g.date ? formatDate(g.date) : 'Undated';
+  const dateLabel = g.date ? formatDate(g.date) : '—';
   const n = g.recs.length;
   const url = g.docId ? docFileUrl(g.docId) : '';
-  const body = open
-    ? `<div class="px-4 pb-4 pt-1">${type === 'test_result' ? testTableHtml(g.recs) : entityListHtml(g.recs)}
+  const detail = open
+    ? `<div class="px-4 pb-4 pt-2 bg-[#FCFBF8] border-b border-[#F4F3EF]">
+         ${type === 'test_result' ? testTableHtml(g.recs) : entityListHtml(g.recs)}
          ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 mt-3 text-[11px] font-bold text-[#5D7B6F] hover:text-[#3f5b50]"><i data-lucide="external-link" class="w-3.5 h-3.5"></i> View source document</a>` : ''}
        </div>`
     : '';
   return `
-    <div class="bg-white rounded-2xl border border-[#E0DDD5] shadow-sm hover:shadow-md transition-shadow overflow-hidden" style="border-left:4px solid ${color}">
-      <button class="card-toggle w-full text-left px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-[#FAF9F5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F]" data-key="${esc(key)}" aria-expanded="${open}">
-        <div class="flex items-center gap-3 min-w-0">
-          <span class="w-9 h-9 rounded-xl bg-[#F5F4F0] flex items-center justify-center shrink-0"><i data-lucide="${esc(icon)}" class="w-4 h-4" style="color:${color}"></i></span>
-          <div class="min-w-0">
-            <div class="text-[14px] font-semibold text-[#2E2C29] truncate" title="${esc(title)}">${esc(title)}</div>
-            <div class="flex items-center gap-1.5 text-[11px] text-[#8C8982] font-medium mt-0.5">
-              <i data-lucide="calendar" class="w-3 h-3"></i>${esc(dateLabel)}
-              <span class="w-1 h-1 rounded-full bg-[#D9D7CF]"></span>
-              ${n} ${esc(noun)}${n === 1 ? '' : 's'}
-            </div>
-          </div>
-        </div>
-        <i data-lucide="chevron-${open ? 'up' : 'down'}" class="w-4 h-4 text-[#A6A298] shrink-0"></i>
+    <div class="border-b border-[#F4F3EF] last:border-0">
+      <button class="card-toggle w-full grid grid-cols-[1fr_6rem_3.5rem] sm:grid-cols-[1fr_7rem_4rem] gap-3 items-center px-4 min-h-[44px] py-1.5 text-left hover:bg-[#FAF9F5] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F] focus-visible:ring-inset ${open ? 'bg-[#FAF9F5]' : ''}" data-key="${esc(key)}" aria-expanded="${open}">
+        <span class="flex items-center gap-2 min-w-0">
+          <i data-lucide="chevron-${open ? 'down' : 'right'}" class="w-4 h-4 text-[#A6A298] shrink-0 transition-transform duration-150"></i>
+          <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${color}"></span>
+          <span class="text-[13px] font-semibold text-[#2E2C29] truncate" title="${esc(title)}">${esc(title)}</span>
+        </span>
+        <span class="text-[12px] text-[#59554D] tabular-nums text-right whitespace-nowrap">${esc(dateLabel)}</span>
+        <span class="text-[12px] text-[#8C8982] tabular-nums text-right">${n}</span>
       </button>
-      ${body}
+      ${detail}
     </div>`;
 }
 
@@ -430,8 +440,8 @@ function renderChatbot() {
   const viewDocs = $('view-docs');
   if (!tabChat || !tabDocs || !viewChat || !viewDocs) return;
 
-  const activeCls = 'flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all border-b-[3px] border-[#5D7B6F] text-[#2E2C29] bg-white';
-  const idleCls = 'flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all border-b-[3px] border-[#EBEBE6] text-[#A6A298] hover:text-[#2E2C29] hover:bg-[#F5F4F0] bg-[#FAFAF8] shadow-inner';
+  const activeCls = 'flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all duration-200 border-b-[3px] border-[#5D7B6F] text-[#2E2C29] bg-white/70';
+  const idleCls = 'flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all duration-200 border-b-[3px] border-transparent text-[#9AA39E] hover:text-[#2E2C29] hover:bg-white/40 bg-transparent';
 
   if (panelTab === 'chat') {
     tabChat.className = activeCls;
@@ -453,6 +463,11 @@ function renderChatbot() {
   renderDocs();
 }
 
+// Circular loading spinner (Lucide loader-2 + animate-spin; lucide keeps the class).
+function spinnerHtml(cls = 'w-3.5 h-3.5 text-[#5D7B6F]'): string {
+  return `<i data-lucide="loader-2" class="${cls} animate-spin"></i>`;
+}
+
 const INGEST_STEPS = ['Upload', 'OCR', 'Extract', 'Review', 'Index'] as const;
 
 // Map a backend node label to an ingestion step index (defensive substring match).
@@ -469,7 +484,7 @@ function stepperHtml(active: number): string {
   return `<div class="flex flex-col gap-2 py-1">${INGEST_STEPS.map((s, i) => {
     const done = i < active, now = i === active;
     const dot = done ? `<i data-lucide="check" class="w-3 h-3 text-white"></i>`
-      : now ? `<span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>` : '';
+      : now ? spinnerHtml('w-3 h-3 text-white') : '';
     const ring = done ? 'bg-[#5D7B6F]' : now ? 'bg-[#C16D54]' : 'bg-[#E0DDD5]';
     const txt = now ? 'font-bold text-[#2E2C29]' : done ? 'text-[#5D7B6F]' : 'text-[#A6A298]';
     return `<div class="flex items-center gap-2.5">
@@ -479,18 +494,36 @@ function stepperHtml(active: number): string {
   }).join('')}</div>`;
 }
 
+function chatEmptyHtml(): string {
+  return `
+    <div class="h-full flex flex-col items-center justify-center text-center px-8 select-none">
+      <div class="w-14 h-14 rounded-2xl bg-white/70 border border-white/80 shadow-sm flex items-center justify-center mb-4">
+        <i data-lucide="sparkles" class="w-6 h-6 text-[#5D7B6F]"></i>
+      </div>
+      <h3 class="text-[15px] font-semibold text-[#2E2C29]">Ask about this patient</h3>
+      <p class="text-[12px] text-[#7E867F] mt-1.5 max-w-[260px] leading-relaxed">
+        Try “what was the latest RBC?”, “show the latest document”, or upload a report from Knowledge.
+      </p>
+    </div>`;
+}
+
 function renderMessages() {
   const el = $('chat-messages');
   if (!el) return;
-  el.innerHTML = chats.map((msg, i) => {
+  if (!chats.length) { setHtml(el, chatEmptyHtml()); return; }
+  setHtml(el, chats.map((msg, i) => {
     if (msg.interrupt) return interruptCardHtml(msg.interrupt, i);
     const bubble = msg.sender === 'user'
-      ? 'bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white rounded-[20px] rounded-tr-[4px] shadow-sm'
-      : 'bg-white border border-[#EBEBE6] text-[#2E2C29] rounded-[20px] rounded-tl-[4px] shadow-[0_2px_8px_rgba(0,0,0,0.02)]';
+      ? 'bg-gradient-to-br from-[#5E8276] to-[#46685B] text-white rounded-2xl rounded-br-md shadow-sm'
+      : 'bg-white/90 border border-white/80 text-[#2E2C29] rounded-2xl rounded-bl-md shadow-[0_2px_10px_rgba(70,104,91,0.06)]';
     return `
       <div class="flex flex-col gap-1.5 max-w-[90%] md:max-w-[85%] ${msg.sender === 'user' ? 'items-end ml-auto' : 'items-start'}">
         <div class="${bubble} p-3 md:p-4 text-[13px] leading-relaxed font-medium">
-          ${msg.stepper ? stepperHtml(msg.step ?? 0) : `${esc(msg.text)}${msg.live ? ' <span class="animate-pulse">▍</span>' : ''}`}
+          ${msg.stepper
+            ? stepperHtml(msg.step ?? 0)
+            : msg.live
+              ? `<span class="inline-flex items-center gap-2 text-[#8C8982]">${spinnerHtml('w-3.5 h-3.5 text-[#5D7B6F]')}<span>${esc(msg.text && msg.text !== '…' ? msg.text : 'Thinking…')}</span></span>`
+              : esc(msg.text)}
           ${msg.sources && msg.sources.length ? `
             <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[#EBEBE6]/60">
               ${msg.sources.map(s => `
@@ -505,7 +538,7 @@ function renderMessages() {
           ${msg.sender === 'user' ? 'You' : 'Agent'} &bull; ${esc(formatTime(msg.timestamp))}
         </span>
       </div>`;
-  }).join('');
+  }).join(''));
   el.scrollTop = el.scrollHeight;
   bindInterruptButtons();
 }
