@@ -1,0 +1,88 @@
+import {
+  ApiDocument, ApiPatient, ApiRecord, Health, SseHandlers,
+} from './types';
+
+const API = (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
+
+async function json<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json() as Promise<T>;
+}
+
+export const getHealth = () => json<Health>('/api/health');
+export const listPatients = () => json<ApiPatient[]>('/api/patients');
+export const createPatient = (body: {
+  name: string; age?: number | null; gender?: string | null; relationship?: string | null;
+}) => json<ApiPatient>('/api/patients', { method: 'POST', body: JSON.stringify(body) });
+export const getRecords = (patientId: string) =>
+  json<ApiRecord[]>(`/api/patients/${patientId}/records`);
+export const getDocuments = (patientId: string) =>
+  json<ApiDocument[]>(`/api/patients/${patientId}/documents`);
+
+export async function uploadFile(file: File):
+  Promise<{ staged_path: string; mime: string; ext: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API}/api/chat/upload`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+// Read an SSE stream from a POST response and dispatch to handlers.
+async function readSse(res: Response, h: SseHandlers): Promise<void> {
+  if (!res.ok || !res.body) {
+    h.onError?.(`${res.status} ${res.statusText}`);
+    h.onDone?.();
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const blocks = buf.split('\n\n');
+    buf = blocks.pop() ?? '';
+    for (const block of blocks) {
+      let event = 'message';
+      let data = '';
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += line.slice(5).trim();
+      }
+      let parsed: any = {};
+      try { parsed = data ? JSON.parse(data) : {}; } catch { parsed = {}; }
+      if (event === 'node') h.onNode?.(parsed.label);
+      else if (event === 'progress') h.onProgress?.(parsed.msg);
+      else if (event === 'interrupt') h.onInterrupt?.(parsed);
+      else if (event === 'message') h.onMessage?.(parsed);
+      else if (event === 'error') h.onError?.(parsed.message);
+      else if (event === 'done') h.onDone?.();
+    }
+  }
+}
+
+export async function streamChat(body: {
+  thread_id: string; message?: string; patient_id?: number | null;
+  staged_path?: string; mime?: string; ext?: string;
+}, handlers: SseHandlers): Promise<void> {
+  const res = await fetch(`${API}/api/chat/stream`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  await readSse(res, handlers);
+}
+
+export async function resumeChat(body: { thread_id: string; resume: any },
+                                 handlers: SseHandlers): Promise<void> {
+  const res = await fetch(`${API}/api/chat/resume`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  await readSse(res, handlers);
+}
