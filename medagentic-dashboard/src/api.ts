@@ -22,6 +22,10 @@ export const getRecords = (patientId: string) =>
   json<ApiRecord[]>(`/api/patients/${patientId}/records`);
 export const getDocuments = (patientId: string) =>
   json<ApiDocument[]>(`/api/patients/${patientId}/documents`);
+export const deleteRecords = (patientId: string, documentIds: string[]) =>
+  json<{ deleted: number }>(`/api/patients/${patientId}/records/delete`, {
+    method: 'POST', body: JSON.stringify({ document_ids: documentIds }),
+  });
 
 export async function uploadFile(file: File):
   Promise<{ staged_path: string; mime: string; ext: string }> {

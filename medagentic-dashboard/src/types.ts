@@ -63,6 +63,9 @@ export interface ApiRecord {
   type: string;
   title: string;
   description: string;
+  value: string;
+  unit: string;
+  reference: string;
   date: string | null;
   status: string;
   severity: string | null;
