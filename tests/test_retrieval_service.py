@@ -27,3 +27,17 @@ def test_search_is_patient_scoped(db):
     assert hits, "expected at least one hit"
     assert all(h["patient_id"] == pa.id for h in hits)
     assert all("chunk_id" in h and "text" in h for h in hits)
+
+
+def test_search_includes_doc_name_and_report_date(db):
+    import datetime as dt
+    p = create_patient(db, name="Cite Owner")
+    d = create_document(db, patient_id=p.id, doc_type="LAB REPORT",
+                        report_date=dt.date(2021, 4, 30), original_name="lab.pdf")
+    emb = _FakeEmbedder()
+    chunk_and_embed(db, document_id=d.id, patient_id=p.id,
+                    text="eosinophil 8%", header="Cite", embedder=emb, size=50)
+    hits = search_chunks(db, patient_id=p.id, query="eosinophil", embedder=emb, k=5)
+    assert hits[0]["report_date"] == "2021-04-30"
+    assert hits[0]["original_name"] == "lab.pdf"
+    assert "page_ref" in hits[0]
