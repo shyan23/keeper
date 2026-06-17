@@ -104,6 +104,35 @@ Three defects observed in the live dashboard:
 - `create_document_node`'s existing hash check stays as a defensive backstop (harmless;
   the early node makes it rarely reached on dupes).
 
+### 6. Delete a date's records (backend + UI)
+
+Need to erase wrong/old data. Because the UI groups by date, deletion is per date
+group — but keyed on the **document ids** in that group (the records already carry
+`document_id`), so it works for the "Undated" group and fallback-dated old data too.
+
+- **Service** `app/services/purge.py::delete_documents(db, patient_id, document_ids)`:
+  - scope-check every id belongs to `patient_id` (ignore/skip foreign ids — never delete
+    across patients);
+  - delete the `TestResult` rows referenced by those documents' `test_result` links
+    (TestResult has no FK to Document, so it won't cascade on its own);
+  - delete the `Document` rows — `DocumentEntity` and `Chunk` cascade via their
+    `ondelete="CASCADE"` FKs;
+  - delete the backing files on disk (`file_path`), ignoring missing files;
+  - leave the shared name tables (`Disease`/`Symptom`/`Medication`/`MedicalTest`)
+    untouched — other documents may reference them.
+  - returns the count of documents deleted.
+- **Endpoint** `POST /api/patients/{patient_id}/records/delete` with body
+  `{ "document_ids": ["3","4"] }` → `{ "deleted": <n> }`. POST (not DELETE) so the body
+  is unambiguous across clients.
+- **Frontend:** each date-group header gets a small trash button. Click → a confirm
+  ("Delete all N records from <date>? This removes the document(s) and cannot be
+  undone.") → collect the group's distinct `document_id`s → call the endpoint → reload
+  records + documents. Confirmation is mandatory (destructive, irreversible).
+
+This is the path to wipe the current bad data: each old record shows today's upload date,
+so they collapse into one group — delete it to clear them, then re-upload for correct
+dates.
+
 ## Testing (TDD)
 
 - `parse_doc_date`: table of input strings → expected `date`/`None`, incl. day-first.
@@ -117,6 +146,9 @@ Three defects observed in the live dashboard:
 - dedup: a second ingest of identical bytes hits `dedup_check` → `already_ingested`, and
   the fake graph never reaches `extract_text`/`confirm_ingest`.
 - frontend: `tsc --noEmit` clean; grouping helper unit-tested if extracted as a pure fn.
+- delete: `delete_documents` removes the docs + their TestResults + cascades
+  DocumentEntity/Chunk, leaves shared name tables, skips foreign-patient ids; the
+  endpoint returns the deleted count and the records/documents go empty afterward.
 
 ## Out of scope
 
