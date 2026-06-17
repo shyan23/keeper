@@ -69,3 +69,26 @@ def test_document_to_out_basename_and_size():
     assert out["name"] == "9.pdf"
     assert out["type"] == "lab"
     assert out["size"] == "1.2 MB"
+
+
+def test_format_value_strips_glued_reference():
+    val, ref = mapping.format_value("52  0-15", "mm/1hr", "")
+    assert val == "52"
+    assert ref == "0-15"
+
+
+def test_format_value_keeps_existing_reference():
+    val, ref = mapping.format_value("6.8 (4.0-6.0)", "%", "4.0-6.0")
+    assert val == "6.8"
+    assert ref == "4.0-6.0"  # provided ref wins; not overwritten
+
+
+def test_format_value_normalizes_number():
+    val, _ = mapping.format_value(".01", "", "")
+    assert val == "0.01"
+
+
+def test_format_value_passthrough_text():
+    val, ref = mapping.format_value("Negative", "", "")
+    assert val == "Negative"
+    assert ref == ""

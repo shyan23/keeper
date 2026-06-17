@@ -1,10 +1,40 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import quote
 
 # browse entity_type -> UI record type
 _ENTITY_TO_UI = {"disease": "disease", "symptom": "symptom", "medication": "medicine"}
+
+_REF_RE = re.compile(r"\(?\s*(\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?)\s*\)?")
+
+
+def format_value(value: str | None, unit: str | None, reference: str | None) -> tuple[str, str]:
+    """Return (clean_value, reference). Split a glued 'value  low-high' interval off the
+    value; normalize numbers; pass non-numeric values through unchanged."""
+    ref = (reference or "").strip()
+    v = (value or "").strip()
+    if not v:
+        return "", ref
+    # If a low-high interval is embedded in the value, peel it off.
+    m = _REF_RE.search(v)
+    if m and re.match(r"^\s*\d", v):
+        interval = m.group(1).replace(" ", "")
+        head = v[:m.start()].strip()
+        if head:
+            v = head
+            if not ref:
+                ref = interval
+    # Normalize a leading bare number (".01" -> "0.01", "6.80" -> "6.8").
+    nm = re.match(r"^-?\d*\.?\d+", v)
+    if nm and nm.group(0) == v:
+        try:
+            f = float(v)
+            v = ("%g" % f)
+        except ValueError:
+            pass
+    return v, ref
 
 
 def avatar_url(name: str) -> str:
