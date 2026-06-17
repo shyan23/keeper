@@ -1,7 +1,7 @@
 import './index.css';
-import { ApiDocument, ApiPatient, ApiRecord } from './types';
+import { ApiDocument, ApiPatient, ApiRecord, CitationSource } from './types';
 import {
-  createPatient, deleteRecords, getDocuments, getHealth, getRecords, listPatients,
+  createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
   resumeChat, streamChat, uploadFile,
 } from './api';
 
@@ -18,9 +18,11 @@ interface ChatMsg {
   sender: 'user' | 'agent';
   text: string;
   timestamp: string;
-  sources?: string[];
+  sources?: CitationSource[];
   live?: boolean;       // agent bubble still streaming
   interrupt?: any;      // HITL payload -> render a card instead of a bubble
+  stepper?: boolean;    // render the ingestion stepper instead of text
+  step?: number;        // active ingestion step index
 }
 
 let patients: ApiPatient[] = [];
@@ -33,6 +35,9 @@ let mobileTab: 'dashboard' | 'knowledge' = 'dashboard';
 let panelTab: 'chat' | 'docs' = 'chat';
 let chats: ChatMsg[] = [];
 let stagedFileName = '';
+let docSearch = '';
+let docType = 'all';
+let docSort: 'newest' | 'oldest' | 'type' = 'newest';
 const threadId = `web-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 
 const $ = (id: string) => document.getElementById(id);
@@ -342,10 +347,11 @@ function renderMessages() {
           ${msg.sources && msg.sources.length ? `
             <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[#EBEBE6]/60">
               ${msg.sources.map(s => `
-                <div class="flex items-center gap-1.5 py-1.5 px-2.5 bg-[#F5F4F0] border border-[#E0DDD5] rounded-xl text-[#2E2C29] shadow-sm">
-                  <span class="text-[8px] md:text-[9px] font-bold text-[#5D7B6F] uppercase tracking-wider">[REF]</span>
-                  <span class="text-[10px] md:text-[11px] font-bold truncate max-w-[150px]">${esc(s)}</span>
-                </div>`).join('')}
+                <a href="${esc(docFileUrl(s.document_id))}" target="_blank" rel="noopener"
+                   class="flex items-center gap-1.5 py-1.5 px-2.5 bg-[#F5F4F0] border border-[#E0DDD5] rounded-xl text-[#2E2C29] shadow-sm hover:border-[#5D7B6F] hover:bg-white transition-colors">
+                  <i data-lucide="file-text" class="w-3 h-3 text-[#5D7B6F]"></i>
+                  <span class="text-[10px] md:text-[11px] font-bold truncate max-w-[180px]">${esc(s.doc_type)}${s.date ? ' · ' + esc(formatDate(s.date)) : ''}</span>
+                </a>`).join('')}
             </div>` : ''}
         </div>
         <span class="text-[9px] md:text-[10px] text-[#A6A298] font-bold tracking-widest uppercase ${msg.sender === 'user' ? 'mr-2' : 'ml-2'}">
@@ -400,6 +406,25 @@ function interruptCardHtml(payload: any, idx: number) {
         </div>
       </div>`;
   }
+  if (payload.type === 'patient_pick') {
+    const opts = (payload.patients || []).map((p: any) =>
+      `<option value="${esc(p.name)}"></option>`).join('');
+    return `
+      <div class="bg-white rounded-3xl p-5 shadow-lg border border-[#DEDCD6]">
+        <div class="flex items-center gap-2 mb-2 text-[#C16D54]">
+          <i data-lucide="user-search" class="w-3.5 h-3.5"></i>
+          <span class="font-extrabold text-[9px] tracking-widest uppercase">Which patient?</span>
+        </div>
+        <p class="text-xs text-[#8C8982] mb-4">Question didn't name a patient. Pick who it's about.</p>
+        <input id="pp-input-${idx}" list="pp-list-${idx}" placeholder="Type a name…"
+          class="w-full bg-white border border-[#DFDDDA] rounded-md px-3 py-2 text-sm text-[#2E2C29] outline-none focus:border-[#5D7B6F] mb-3" />
+        <datalist id="pp-list-${idx}">${opts}</datalist>
+        <div class="flex gap-2.5">
+          <button data-act="pp-cancel" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] py-3 rounded-xl text-xs font-extrabold">Cancel</button>
+          <button data-act="pp-go" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Ask</button>
+        </div>
+      </div>`;
+  }
   // low_confidence
   return `
     <div class="bg-white rounded-3xl p-5 shadow-lg border border-[#DEDCD6]">
@@ -444,6 +469,15 @@ function bindInterruptButtons() {
           ? { approved: true, extracted: collectExtracted(idx, payload.extracted),
               ...(payload.patient_id ? { patient_id: payload.patient_id } : {}) }
           : { approved: false };
+      } else if (payload.type === 'patient_pick') {
+        if (t.dataset.act === 'pp-cancel') {
+          resume = { patient_id: null };
+        } else {
+          const val = ($(`pp-input-${idx}`) as HTMLInputElement | null)?.value.trim() || '';
+          const match = (payload.patients || []).find(
+            (p: any) => p.name === val || String(p.id) === val);
+          resume = { patient_id: match ? match.id : null };
+        }
       } else {
         resume = { proceed: t.dataset.act === 'proceed' };
       }
@@ -484,24 +518,51 @@ function renderDocs() {
 
   const docsList = $('docs-list');
   if (docsList) {
-    docsList.innerHTML = docs.map(doc => `
-      <div class="bg-white border border-[#EBEBE6] p-3.5 md:p-4 rounded-2xl flex items-start gap-3 md:gap-4 shadow-sm">
-        <div class="bg-[#FAF9F5] text-[#C16D54] p-3 rounded-xl shrink-0 hidden sm:block">
-          <i data-lucide="file-text" class="w-5 h-5"></i>
-        </div>
-        <div class="flex-1 overflow-hidden pt-0.5">
-          <div class="text-[13px] md:text-sm font-bold text-[#2E2C29] truncate tracking-tight" title="${esc(doc.name)}">${esc(doc.name)}</div>
-          <div class="flex flex-wrap items-center gap-1.5 mt-1.5 text-[10px] md:text-[11px] text-[#A6A298] font-bold uppercase tracking-wider">
-            <span>${esc(doc.type)}</span>
-            <span class="w-1 h-1 rounded-full bg-[#D5D2C9]"></span>
-            <span>${esc(doc.size)}</span>
-          </div>
-          ${doc.date ? `
-          <div class="mt-2.5 text-[9px] md:text-[10px] font-bold text-[#8C8982] uppercase tracking-wider flex items-center gap-1.5 bg-[#FAF9F5] inline-flex px-2 py-1 rounded-md border border-[#EBEBE6]">
-            <i data-lucide="upload-cloud" class="w-3 h-3"></i> ${esc(formatDate(doc.date))}
-          </div>` : ''}
-        </div>
-      </div>`).join('');
+    const types = ['all', ...Array.from(new Set(docs.map(d => d.type).filter(Boolean)))];
+    const view = docs.filter(d =>
+      (docType === 'all' || d.type === docType) &&
+      (!docSearch || d.name.toLowerCase().includes(docSearch.toLowerCase())));
+    view.sort((a, b) => {
+      if (docSort === 'type') return (a.type || '').localeCompare(b.type || '');
+      const ta = a.date ? new Date(a.date).getTime() : 0;
+      const tb = b.date ? new Date(b.date).getTime() : 0;
+      return docSort === 'newest' ? tb - ta : ta - tb;
+    });
+    const rows = view.map(d => `
+      <tr class="border-t border-[#F0EFEB] hover:bg-[#FAF9F5]">
+        <td class="py-2 px-3 text-[13px] font-semibold text-[#2E2C29] truncate max-w-[220px]" title="${esc(d.name)}">
+          <i data-lucide="file-text" class="w-3.5 h-3.5 inline text-[#C16D54] mr-1.5"></i>${esc(d.name)}</td>
+        <td class="py-2 px-3 text-[11px] uppercase tracking-wider text-[#A6A298] font-bold whitespace-nowrap">${esc(d.type)}</td>
+        <td class="py-2 px-3 text-[12px] text-[#59554D] whitespace-nowrap">${d.date ? esc(formatDate(d.date)) : '—'}</td>
+        <td class="py-2 px-3 text-right"><a href="${esc(docFileUrl(d.id))}" target="_blank" rel="noopener"
+          class="text-[11px] font-bold text-[#5D7B6F] hover:text-[#3f5b50]">Open</a></td>
+      </tr>`).join('');
+    docsList.innerHTML = `
+      <div class="flex flex-wrap gap-2 mb-3 items-center">
+        <input id="doc-search" value="${esc(docSearch)}" placeholder="Search documents…"
+          class="flex-1 min-w-[140px] bg-white border border-[#E0DDD5] rounded-lg px-3 py-1.5 text-xs outline-none focus:border-[#5D7B6F]" />
+        <select id="doc-type" class="bg-white border border-[#E0DDD5] rounded-lg px-2 py-1.5 text-xs">
+          ${types.map(t => `<option value="${esc(t)}" ${t === docType ? 'selected' : ''}>${t === 'all' ? 'All types' : esc(t)}</option>`).join('')}
+        </select>
+        <select id="doc-sort" class="bg-white border border-[#E0DDD5] rounded-lg px-2 py-1.5 text-xs">
+          <option value="newest" ${docSort === 'newest' ? 'selected' : ''}>Newest</option>
+          <option value="oldest" ${docSort === 'oldest' ? 'selected' : ''}>Oldest</option>
+          <option value="type" ${docSort === 'type' ? 'selected' : ''}>Type</option>
+        </select>
+      </div>
+      ${view.length ? `<div class="bg-white rounded-2xl border border-[#E0DDD5] overflow-hidden">
+        <table class="w-full text-left">
+          <thead><tr class="text-[10px] uppercase tracking-widest text-[#A6A298]">
+            <th class="py-1.5 px-3 font-bold">Document</th><th class="py-1.5 px-3 font-bold">Type</th>
+            <th class="py-1.5 px-3 font-bold">Date</th><th class="py-1.5 px-3 font-bold text-right">Action</th>
+          </tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<div class="text-center py-12 text-[#A6A298] text-sm">No documents.</div>`}`;
+    const si = $('doc-search') as HTMLInputElement | null;
+    if (si) si.oninput = () => { docSearch = si.value; renderDocs(); if (typeof lucide !== 'undefined') lucide.createIcons(); si.focus(); };
+    const ts = $('doc-type') as HTMLSelectElement | null;
+    if (ts) ts.onchange = () => { docType = ts.value; renderDocs(); if (typeof lucide !== 'undefined') lucide.createIcons(); };
+    const so = $('doc-sort') as HTMLSelectElement | null;
+    if (so) so.onchange = () => { docSort = so.value as typeof docSort; renderDocs(); if (typeof lucide !== 'undefined') lucide.createIcons(); };
   }
 }
 
@@ -540,7 +601,7 @@ function streamHandlers(agent: ChatMsg) {
       chats.push({ sender: 'agent', text: '', timestamp: nowIso(), interrupt: payload });
       render();
     },
-    onMessage: (m: { content: string; sources?: string[] }) => {
+    onMessage: (m: { content: string; sources?: CitationSource[] }) => {
       agent.text = m.content; agent.live = false; agent.sources = m.sources;
       renderMessages();
     },

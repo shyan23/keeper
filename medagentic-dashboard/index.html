@@ -25,7 +25,7 @@
     </div>
 
     <!-- Desktop Sidebar -->
-    <div class="hidden lg:flex w-72 bg-[#1A1D1B] flex-col h-full overflow-y-auto border-r border-[#121413] shrink-0">
+    <div id="sidebar" class="hidden lg:flex bg-[#1A1D1B] flex-col h-full overflow-y-auto border-r border-[#121413] shrink-0 relative" style="width:18rem">
       <div class="p-6">
         <h2 class="text-xl font-bold text-[#F5F4F0] flex items-center gap-3 tracking-tight">
           <div class="w-8 h-8 bg-gradient-to-br from-[#698A7D] to-[#4F6D61] rounded-lg flex items-center justify-center font-bold text-white shadow-inner">
@@ -51,6 +51,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Sidebar resize handle -->
+    <div id="sidebar-resizer" class="hidden lg:block w-1 h-full cursor-col-resize bg-[#121413] hover:bg-[#5D7B6F] active:bg-[#5D7B6F] shrink-0 transition-colors"></div>
 
     <!-- Patient Dashboard Area -->
     <div id="dashboard-view" class="flex-1 overflow-hidden flex flex-col bg-[#FAFAF8]">
@@ -110,8 +113,8 @@
 
       <div id="view-docs" class="hidden flex-1 flex-col p-4 md:p-6 overflow-y-auto relative hide-scrollbar">
         <div id="upload-container"></div>
-        <div class="text-[10px] font-extrabold text-[#A6A298] uppercase tracking-widest mt-4 mb-4 pl-1">Active Context</div>
-        <div id="docs-list" class="space-y-3 pb-8"></div>
+        <div class="text-[10px] font-extrabold text-[#A6A298] uppercase tracking-widest mt-4 mb-4 pl-1">Documents</div>
+        <div id="docs-list" class="pb-8"></div>
       </div>
     </div>
 
