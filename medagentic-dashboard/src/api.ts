@@ -4,6 +4,9 @@ import {
 
 const API = (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
 
+// Absolute URL to stream a document's original file (citations / docs table "Open").
+export const docFileUrl = (id: string | number) => `${API}/api/documents/${id}/file`;
+
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -73,7 +76,7 @@ async function readSse(res: Response, h: SseHandlers): Promise<void> {
 
 export async function streamChat(body: {
   thread_id: string; message?: string; patient_id?: number | null;
-  staged_path?: string; mime?: string; ext?: string;
+  staged_path?: string; mime?: string; ext?: string; original_name?: string;
 }, handlers: SseHandlers): Promise<void> {
   const res = await fetch(`${API}/api/chat/stream`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

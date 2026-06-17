@@ -564,7 +564,8 @@ async function handleUpload(file: File) {
   try {
     const staged = await uploadFile(file);
     await streamChat({ thread_id: threadId, message: 'Read this and arrange it.',
-      staged_path: staged.staged_path, mime: staged.mime, ext: staged.ext },
+      staged_path: staged.staged_path, mime: staged.mime, ext: staged.ext,
+      original_name: file.name },
       streamHandlers(agent));
   } catch (e: any) {
     agent.text = `⚠️ ${e.message}`; agent.live = false; renderMessages();
@@ -607,4 +608,34 @@ $('chat-form')?.addEventListener('submit', e => {
   sendText(val);
 });
 
+// ---- resizable sidebar ----
+function initSidebarResize() {
+  const sidebar = $('sidebar');
+  const handle = $('sidebar-resizer');
+  if (!sidebar || !handle) return;
+  const MIN = 200, MAX = 520;
+  const saved = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
+  if (saved >= MIN && saved <= MAX) sidebar.style.width = `${saved}px`;
+  let dragging = false;
+  const onMove = (e: MouseEvent) => {
+    if (!dragging) return;
+    const w = Math.min(MAX, Math.max(MIN, e.clientX - sidebar.getBoundingClientRect().left));
+    sidebar.style.width = `${w}px`;
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    localStorage.setItem('sidebarWidth', String(parseInt(sidebar.style.width, 10)));
+  };
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true;
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', stop);
+}
+
+initSidebarResize();
 init();

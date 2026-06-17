@@ -128,6 +128,30 @@ def test_stream_text_requires_patient():
     assert "pick a patient" in r.text.lower()
 
 
+def test_stream_passes_original_name(monkeypatch):
+    from app.api import server
+    client = TestClient(server.app)
+    captured = {}
+
+    class S:
+        values = {"messages": []}
+
+    class G:
+        def stream(self, payload, cfg, stream_mode="updates"):
+            captured["payload"] = payload
+            yield {"router": {}}
+        def get_state(self, cfg):
+            return S()
+
+    monkeypatch.setattr(runtime_mod, "get_graph", lambda: G())
+    monkeypatch.setattr(runtime_mod, "get_deps", lambda: {"fake": True})
+    r = client.post("/api/chat/stream", json={
+        "thread_id": "t-name", "staged_path": "/tmp/x.pdf", "mime": "application/pdf",
+        "ext": "pdf", "original_name": "Haematology.pdf"})
+    assert r.status_code == 200
+    assert captured["payload"]["original_name"] == "Haematology.pdf"
+
+
 def test_stream_runs_graph(monkeypatch):
     from app.api import server
     client = TestClient(server.app)

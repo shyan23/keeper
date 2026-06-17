@@ -26,6 +26,7 @@ class StreamIn(BaseModel):
     staged_path: str | None = None
     mime: str | None = None
     ext: str | None = None
+    original_name: str | None = None
 
 
 class ResumeIn(BaseModel):
@@ -63,6 +64,7 @@ def stream(body: StreamIn):
             "mime_type": body.mime,
             "file_ext": body.ext,
             "source_type": "pdf" if body.ext == "pdf" else "image",
+            "original_name": body.original_name,
         }
     else:
         if body.patient_id is None:
