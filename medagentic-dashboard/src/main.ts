@@ -46,7 +46,15 @@ let docSearch = '';
 let docType = 'all';
 let docSort: 'newest' | 'oldest' | 'type' = 'newest';
 const expandedCards = new Set<string>();   // which document cards are expanded
-const threadId = `web-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+// Persistent thread for the chat conversation (multi-turn memory). Ingestion
+// gets a FRESH thread per file so stale state channels (document_id,
+// already_ingested, content_hash…) from a prior run can't bleed in and make the
+// graph skip creating the next document. `activeThread` is whichever thread the
+// in-flight run/interrupt belongs to, so resume targets the right one.
+const chatThread = `web-chat-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+const newThread = (kind: string) =>
+  `web-${kind}-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+let activeThread = chatThread;
 
 const $ = (id: string) => document.getElementById(id);
 
@@ -778,7 +786,8 @@ async function handleUpload(file: File) {
   render();
   try {
     const staged = await uploadFile(file);
-    await streamChat({ thread_id: threadId, message: 'Read this and arrange it.',
+    activeThread = newThread('ingest');   // isolate each ingestion's graph state
+    await streamChat({ thread_id: activeThread, message: 'Read this and arrange it.',
       staged_path: staged.staged_path, mime: staged.mime, ext: staged.ext,
       original_name: file.name },
       streamHandlers(agent));
@@ -792,14 +801,15 @@ async function handleUpload(file: File) {
 async function runResume(resume: any) {
   const agent = liveAgent();
   render();
-  await resumeChat({ thread_id: threadId, resume }, streamHandlers(agent));
+  await resumeChat({ thread_id: activeThread, resume }, streamHandlers(agent));
 }
 
 function sendText(text: string) {
   chats.push({ sender: 'user', text, timestamp: nowIso() });
   const agent = liveAgent();
   render();
-  streamChat({ thread_id: threadId, message: text,
+  activeThread = chatThread;   // chat keeps one thread for conversation memory
+  streamChat({ thread_id: activeThread, message: text,
     patient_id: currentPatientId ? parseInt(currentPatientId, 10) : null },
     streamHandlers(agent));
 }
