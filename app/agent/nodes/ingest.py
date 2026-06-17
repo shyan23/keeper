@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 from difflib import SequenceMatcher
@@ -23,6 +24,8 @@ from app.services.extraction import extract_pages, extract_text, slice_pdf
 from app.services.patients import create_patient
 from app.services.segment import doc_type_for, split_reports
 from app.models import Patient
+
+log = logging.getLogger("app.ingest")
 
 
 _EXTRACT_PROMPT = """Extract structured medical data from this document text.
@@ -233,6 +236,7 @@ def persist_reports_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
             "content": "This document was already on file — skipped to avoid duplicates.",
         }]}
     deps = config["configurable"]["deps"]
+    progress = config["configurable"].get("progress")
     pid = state["patient_id"]
     ext = state.get("file_ext") or "bin"
     staged = state.get("file_path")
@@ -270,6 +274,16 @@ def persist_reports_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
                 if (len(segments) > 1 and state.get("mime_type") == "application/pdf"
                         and seg.get("pages")):
                     blob = slice_pdf(data, seg["pages"])
+                    # slice_pdf returns the SAME object when it kept every page —
+                    # a degenerate split, so this report's card opens the whole
+                    # bundle. Surface it instead of silently saving the full file.
+                    if blob is data:
+                        name = seg.get("name") or seg.get("doc_type") or "report"
+                        warn = (f"⚠ '{name}' kept all pages (pages={seg['pages']}) — "
+                                "card will open the whole bundle, not just this report")
+                        log.warning("[ingest] %s", warn)
+                        if progress:
+                            progress(warn)
                 set_file_path(s, doc_id, storage.save_bytes(pid, doc_id, ext, blob))
             total_entities += persist_extraction(s, document_id=doc_id, result=result)
             text = seg.get("text") or ""
