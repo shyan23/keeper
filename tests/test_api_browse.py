@@ -31,3 +31,35 @@ def test_records_and_documents_empty_for_new_patient():
     pid = client.post("/api/patients", json={"name": "Empty One"}).json()["id"]
     assert client.get(f"/api/patients/{pid}/records").json() == []
     assert client.get(f"/api/patients/{pid}/documents").json() == []
+
+
+import datetime as dt
+
+from app.db import SessionLocal
+from app.models import (
+    Document, DocumentEntity, MedicalTest, Patient, TestResult,
+)
+from app.services import browse as bsvc
+
+
+def test_list_test_results_prefers_report_date():
+    db = SessionLocal()
+    try:
+        p = Patient(name="Browse Date Person")
+        db.add(p); db.flush()
+        doc = Document(patient_id=p.id, doc_type="lab",
+                       report_date=dt.date(2023, 10, 5))
+        db.add(doc); db.flush()
+        mt = MedicalTest(name="ESR")
+        db.add(mt); db.flush()
+        tr = TestResult(medical_test_id=mt.id, value="52", unit="mm/1hr",
+                        reference_range="0-15")
+        db.add(tr); db.flush()
+        db.add(DocumentEntity(document_id=doc.id, entity_type="test_result",
+                              entity_id=tr.id, source_span="ESR 52"))
+        db.commit()
+        rows = bsvc.list_test_results(db, patient_id=p.id)
+        assert rows[0]["date"] == "2023-10-05"  # report_date, not today
+        assert rows[0]["reference_range"] == "0-15"
+    finally:
+        db.close()

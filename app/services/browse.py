@@ -6,7 +6,7 @@ Each row joins an extracted entity back through `document_entity` -> `document`
 """
 from __future__ import annotations
 
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -31,7 +31,7 @@ def list_entity_links(db: Session, entity_type: str, patient_id: int | None = No
             model.name, Patient.name.label("patient"), Patient.id.label("patient_id"),
             Document.doc_type, Document.uploaded_at,
             DocumentEntity.confidence, DocumentEntity.source_span,
-            DocumentEntity.document_id,
+            DocumentEntity.document_id, Document.report_date,
         )
         .join(DocumentEntity, and_(DocumentEntity.entity_id == model.id,
                                    DocumentEntity.entity_type == entity_type))
@@ -40,10 +40,11 @@ def list_entity_links(db: Session, entity_type: str, patient_id: int | None = No
     )
     if patient_id is not None:
         q = q.filter(Patient.id == patient_id)
-    q = q.order_by(Document.uploaded_at.desc(), model.name)
+    q = q.order_by(func.coalesce(Document.report_date, func.date(Document.uploaded_at)).desc(), model.name)
     return [
         {"name": r[0], "patient": r[1], "patient_id": r[2], "doc_type": r[3],
-         "date": r[4].strftime("%Y-%m-%d") if r[4] else None,
+         "date": (r[8].strftime("%Y-%m-%d") if r[8]
+                  else (r[4].strftime("%Y-%m-%d") if r[4] else None)),
          "confidence": round(r[5], 2) if r[5] is not None else None,
          "source": r[6], "document_id": r[7]}
         for r in q.all()
@@ -57,7 +58,7 @@ def list_test_results(db: Session, patient_id: int | None = None) -> list[dict]:
             MedicalTest.name, TestResult.value, TestResult.unit, TestResult.reference_range,
             Patient.name.label("patient"), Patient.id.label("patient_id"),
             Document.doc_type, Document.uploaded_at, DocumentEntity.source_span,
-            DocumentEntity.document_id,
+            DocumentEntity.document_id, Document.report_date,
         )
         .join(TestResult, TestResult.medical_test_id == MedicalTest.id)
         .join(DocumentEntity, and_(DocumentEntity.entity_id == TestResult.id,
@@ -67,11 +68,12 @@ def list_test_results(db: Session, patient_id: int | None = None) -> list[dict]:
     )
     if patient_id is not None:
         q = q.filter(Patient.id == patient_id)
-    q = q.order_by(Document.uploaded_at.desc(), MedicalTest.name)
+    q = q.order_by(func.coalesce(Document.report_date, func.date(Document.uploaded_at)).desc(), MedicalTest.name)
     return [
         {"test": r[0], "value": r[1], "unit": r[2], "reference_range": r[3],
          "patient": r[4], "patient_id": r[5], "doc_type": r[6],
-         "date": r[7].strftime("%Y-%m-%d") if r[7] else None,
+         "date": (r[10].strftime("%Y-%m-%d") if r[10]
+                  else (r[7].strftime("%Y-%m-%d") if r[7] else None)),
          "source": r[8], "document_id": r[9]}
         for r in q.all()
     ]
