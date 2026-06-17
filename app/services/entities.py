@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.agent.state import ExtractionResult
 from app.models import (
-    Disease, DocumentEntity, Doctor, Medication, MedicalTest, Symptom, TestResult,
+    Disease, Document, DocumentEntity, Doctor, Medication, MedicalTest, Symptom,
+    TestResult,
 )
+from app.services.dates import parse_doc_date
 
 
 def _upsert_by_name(db: Session, model, name: str):
@@ -29,6 +33,12 @@ def _link(db: Session, document_id: int, entity_type: str, entity_id: int,
 def persist_extraction(db: Session, *, document_id: int, result: ExtractionResult) -> int:
     """Upsert extracted entities (by name) and link them to the document. Returns link count."""
     count = 0
+    observed = parse_doc_date(result.doc_date)
+    if observed is not None:
+        doc = db.get(Document, document_id)
+        if doc is not None:
+            doc.report_date = observed
+    observed_dt = dt.datetime.combine(observed, dt.time()) if observed else None
     if result.doctor:
         d = _upsert_by_name(db, Doctor, result.doctor)
         _link(db, document_id, "doctor", d.id, result.confidence, result.source_span)
@@ -48,7 +58,7 @@ def persist_extraction(db: Session, *, document_id: int, result: ExtractionResul
     for t in result.tests:
         mt = _upsert_by_name(db, MedicalTest, t.name)
         tr = TestResult(medical_test_id=mt.id, value=t.value, unit=t.unit,
-                        reference_range=t.reference_range)
+                        reference_range=t.reference_range, observed_at=observed_dt)
         db.add(tr)
         db.flush()
         _link(db, document_id, "test_result", tr.id, t.confidence, t.source_span)
