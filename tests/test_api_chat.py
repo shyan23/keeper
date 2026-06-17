@@ -13,3 +13,82 @@ def test_cfg_has_thread_and_progress():
     assert cfg["configurable"]["deps"] == {"x": 1}
     cfg["configurable"]["progress"]("hi")
     assert calls == ["hi"]
+
+
+from langgraph.types import Command
+
+from app.api import sse
+
+
+class _FakeInterrupt:
+    def __init__(self, value):
+        self.value = value
+
+
+class FakeGraph:
+    """Scriptable stand-in for the compiled LangGraph."""
+
+    def __init__(self, chunks, final_messages=None):
+        self._chunks = chunks
+        self._final = final_messages or []
+        self.last_input = None
+
+    def stream(self, payload, cfg, stream_mode="updates"):
+        self.last_input = payload
+        for ch in self._chunks:
+            yield ch
+
+    def get_state(self, cfg):
+        class S:
+            values = {"messages": self._final}
+        return S()
+
+
+def _collect(gen):
+    return "".join(line for line in gen if line.strip())
+
+
+def test_sse_clean_answer_sequence():
+    graph = FakeGraph(
+        chunks=[{"router": {}}, {"generate_answer": {}}],
+        final_messages=[{"role": "assistant", "content": "Hi", "sources": ["a.pdf"]}],
+    )
+    body = _collect(sse.run_graph_sse(graph, {"messages": []}, "t1", deps={}))
+    assert "event: node" in body
+    assert "🧠 Composing the answer" in body
+    assert "event: message" in body
+    assert "Hi" in body
+    assert "a.pdf" in body
+    assert body.rstrip().endswith("event: done\ndata: {}")
+
+
+def test_sse_interrupt_then_resume():
+    graph = FakeGraph(
+        chunks=[{"extract_text": {}},
+                {"__interrupt__": (_FakeInterrupt({"type": "confirm_ingest",
+                                                   "extracted": {}}),)}],
+    )
+    body = _collect(sse.run_graph_sse(graph, {"messages": []}, "t2", deps={}))
+    assert "event: interrupt" in body
+    assert "confirm_ingest" in body
+    assert "event: message" not in body  # paused: no final message
+
+    graph2 = FakeGraph(chunks=[{"persist": {}}],
+                       final_messages=[{"role": "assistant", "content": "done"}])
+    body2 = _collect(sse.run_graph_sse(graph2, Command(resume={"approved": True}),
+                                       "t2", deps={}))
+    assert "💾 Saving entities" in body2
+    assert "event: message" in body2
+    assert isinstance(graph2.last_input, Command)
+
+
+def test_sse_error_event():
+    class Boom(FakeGraph):
+        def stream(self, payload, cfg, stream_mode="updates"):
+            raise RuntimeError("provider down")
+            yield  # pragma: no cover
+
+    body = _collect(sse.run_graph_sse(Boom([]), {"messages": []}, "t3", deps={}))
+    assert "event: error" in body
+    assert "provider down" in body
+    assert "event: done" in body
