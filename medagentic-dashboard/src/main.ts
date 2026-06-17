@@ -1,7 +1,7 @@
 import './index.css';
 import { ApiDocument, ApiPatient, ApiRecord } from './types';
 import {
-  createPatient, getDocuments, getHealth, getRecords, listPatients,
+  createPatient, deleteRecords, getDocuments, getHealth, getRecords, listPatients,
   resumeChat, streamChat, uploadFile,
 } from './api';
 
@@ -201,49 +201,100 @@ function renderDashboard() {
     });
   }
 
-  const view = records
-    .filter(r => filterType === 'all' || r.type === filterType)
-    .sort((a, b) => {
-      const da = new Date(a.date ?? 0).getTime();
-      const db = new Date(b.date ?? 0).getTime();
-      return sortOrder === 'desc' ? db - da : da - db;
-    });
-
+  const view = records.filter(r => filterType === 'all' || r.type === filterType);
+  const groups = groupByDate(view, sortOrder);
   const grid = $('records-grid');
   if (grid) {
     grid.innerHTML = view.length === 0 ? `
-      <div class="col-span-full text-center py-16 md:py-20 text-[#A6A298]">
+      <div class="col-span-full text-center py-16 text-[#A6A298]">
         <i data-lucide="filter" class="w-10 h-10 mx-auto text-[#D5D2C9] mb-4"></i>
         <p class="text-lg font-light tracking-tight">No records found for this filter.</p>
-      </div>` : view.map(record => `
-      <div class="bg-white rounded-3xl border border-[#E0DDD5] shadow-sm p-5 md:p-6 hover:shadow-md hover:-translate-y-1 transition-all flex flex-col">
-        <div class="flex justify-between items-start mb-4">
-          <div>
-            <h3 class="text-[17px] font-bold text-[#2E2C29] leading-tight flex flex-col items-start gap-1.5">
-              ${esc(record.title)}
-              <span class="text-[9px] font-black text-[#A6A298] uppercase tracking-widest bg-[#F5F4F0] px-2 py-0.5 rounded-full">${esc(record.type.replace('_', ' '))}</span>
-            </h3>
-          </div>
-          ${record.severity ? `
-            <span class="px-2 py-1 text-[9px] font-bold rounded uppercase tracking-widest shadow-sm whitespace-nowrap mt-0.5 ${
-              record.severity === 'High' || record.severity === 'Critical' ? 'bg-[#FF7373] text-white' : 'bg-[#E5B567] text-white'
-            }">${esc(record.severity)}</span>` : `
-            <span class="px-2 py-1 bg-[#F5F4F0] text-[#8C8982] text-[9px] font-bold rounded uppercase tracking-widest border border-[#EBEBE6] whitespace-nowrap mt-0.5">${esc(record.status)}</span>`}
-        </div>
-        <div class="flex-1 mt-1 mb-2">
-          <p class="font-medium text-[#59554D] text-[13px] md:text-sm leading-relaxed">${esc(record.description)}</p>
-        </div>
-        <div class="mt-5 pt-4 border-t border-[#F0EFEB] flex flex-wrap gap-2 items-center justify-between">
-          <p class="text-[10px] text-[#A6A298] font-bold uppercase tracking-wider flex items-center gap-1.5">
-            <i data-lucide="calendar" class="w-3.5 h-3.5 text-[#5D7B6F]"></i> ${esc(record.date ?? '—')}
-          </p>
-          ${record.doctor ? `
-            <p class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider flex items-center gap-1.5 bg-[#F5F4F0] px-2 py-1 rounded-md">
-              <i data-lucide="stethoscope" class="w-3.5 h-3.5 text-[#5D7B6F]"></i> <span class="truncate max-w-[120px]">${esc(record.doctor)}</span>
-            </p>` : ''}
-        </div>
-      </div>`).join('');
+      </div>` : groups.map(g => dateGroupHtml(g)).join('');
+    bindDeleteButtons();
   }
+}
+
+const DATE_COLORS = ['#5D7B6F', '#C16D54', '#6D6E9E', '#9E6D8A', '#6D9E97', '#9E946D'];
+
+function dateColor(date: string): string {
+  let h = 0;
+  for (let i = 0; i < date.length; i++) h = (h * 31 + date.charCodeAt(i)) >>> 0;
+  return DATE_COLORS[h % DATE_COLORS.length];
+}
+
+interface DateGroup { date: string; label: string; records: ApiRecord[]; docIds: string[]; }
+
+function groupByDate(rows: ApiRecord[], order: 'desc' | 'asc'): DateGroup[] {
+  const map = new Map<string, ApiRecord[]>();
+  for (const r of rows) {
+    const key = r.date ?? '';
+    (map.get(key) ?? map.set(key, []).get(key)!).push(r);
+  }
+  const keys = [...map.keys()].sort((a, b) => {
+    if (a === '') return 1;
+    if (b === '') return -1;
+    const t = new Date(a).getTime() - new Date(b).getTime();
+    return order === 'desc' ? -t : t;
+  });
+  return keys.map(k => {
+    const recs = map.get(k)!;
+    const docIds = [...new Set(recs.map(r => r.id.split('-')[1]).filter(x => x && x !== 'undefined'))];
+    return { date: k, label: k ? formatDate(k) : 'Undated', records: recs, docIds };
+  });
+}
+
+function typeTag(t: string): string {
+  return t === 'test_result' ? '' :
+    `<span class="text-[9px] font-bold text-[#A6A298] uppercase tracking-widest mr-1.5">${esc(t.replace('_', ' '))}</span>`;
+}
+
+function dateGroupHtml(g: DateGroup): string {
+  const color = g.date ? dateColor(g.date) : '#A6A298';
+  const rows = g.records.map(r => `
+      <tr class="border-t border-[#F0EFEB] hover:bg-[#FAF9F5]">
+        <td class="py-2 px-3 text-[13px] font-semibold text-[#2E2C29]">${typeTag(r.type)}${esc(r.title)}</td>
+        <td class="py-2 px-3 text-[13px] text-[#59554D] whitespace-nowrap">${esc([r.value, r.unit].filter(Boolean).join(' '))}</td>
+        <td class="py-2 px-3 text-[12px] text-[#A6A298] whitespace-nowrap">${esc(r.reference || '\u2014')}</td>
+      </tr>`).join('');
+  return `
+    <div class="col-span-full mb-6 bg-white rounded-2xl border border-[#E0DDD5] shadow-sm overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-2.5" style="border-left:4px solid ${color}">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full" style="background:${color}"></span>
+          <span class="text-[13px] font-bold text-[#2E2C29]">${esc(g.label)}</span>
+          <span class="text-[10px] text-[#A6A298] font-bold uppercase tracking-wider">${g.records.length} record${g.records.length === 1 ? '' : 's'}</span>
+        </div>
+        ${g.docIds.length ? `<button class="del-date text-[#C16D54] hover:text-[#a3553f] p-1" data-ids="${esc(g.docIds.join(','))}" data-label="${esc(g.label)}" data-count="${g.records.length}" title="Delete this date"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}
+      </div>
+      <table class="w-full text-left">
+        <thead><tr class="text-[10px] uppercase tracking-widest text-[#A6A298]">
+          <th class="py-1.5 px-3 font-bold">Name</th>
+          <th class="py-1.5 px-3 font-bold">Result</th>
+          <th class="py-1.5 px-3 font-bold">Expected</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function bindDeleteButtons() {
+  document.querySelectorAll('.del-date').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      const t = e.currentTarget as HTMLButtonElement;
+      const ids = (t.dataset.ids || '').split(',').filter(Boolean);
+      const label = t.dataset.label || 'this date';
+      const count = t.dataset.count || ids.length;
+      if (!ids.length) return;
+      if (!confirm(`Delete all ${count} records from ${label}? This removes the document(s) and cannot be undone.`)) return;
+      try {
+        await deleteRecords(currentPatientId, ids);
+        await loadPatientData();
+        render();
+      } catch (err: any) {
+        banner(`Delete failed: ${err.message}`);
+      }
+    });
+  });
 }
 
 function renderChatbot() {
