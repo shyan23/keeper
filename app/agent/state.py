@@ -82,6 +82,7 @@ class AgentState(TypedDict, total=False):
     patient_candidates: list[dict[str, Any]]
     # query
     query_filters: dict[str, Any] | None
+    edit_target: dict[str, Any] | None    # proposed correction awaiting HITL verify
     retrieved: list[dict[str, Any]]
     answer: str | None
     citations: list[dict[str, Any]]

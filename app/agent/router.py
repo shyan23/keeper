@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-_VALID = {"ingest", "structured_query", "rag_query"}
+_VALID = {"ingest", "structured_query", "rag_query", "edit"}
 
 _PROMPT = """Classify the user's request into exactly one label:
+- edit: asking to CHANGE/CORRECT/FIX/UPDATE/SET an extracted value, name, or date (e.g. "set hemoglobin to 1.2", "correct the report date to 5 Oct 2023", "rename the diagnosis to anemia").
 - structured_query: asking for a specific document/record by patient, type, or recency (e.g. "latest report of Jane", "show prescriptions for Bob").
 - rag_query: a question about the CONTENT of documents (e.g. "what did the doctor say about her blood pressure?").
 Respond with ONLY the label.
@@ -26,6 +27,8 @@ def classify_intent(state: dict[str, Any], config: dict[str, Any]) -> dict[str, 
         return {"intent": "ingest"}
     deps = config["configurable"]["deps"]
     label = deps.chat.complete(_PROMPT.format(text=_last_user_text(state))).strip().lower()
+    if "edit" in label:
+        return {"intent": "edit"}
     if "structured" in label:
         return {"intent": "structured_query"}
     if "ingest" in label:

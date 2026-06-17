@@ -572,6 +572,32 @@ function interruptCardHtml(payload: any, idx: number) {
         </div>
       </div>`;
   }
+  if (payload.type === 'confirm_edit') {
+    const ed = payload.edit || {};
+    return `
+      <div class="bg-gradient-to-br from-[#F5F4F0] to-[#E9E8E1] rounded-3xl p-5 md:p-6 shadow-lg border border-[#DEDCD6]">
+        <div class="flex items-center gap-2 mb-3 text-[#C16D54]">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+          <span class="font-extrabold text-[9px] tracking-widest uppercase">Human in the loop — verify this edit</span>
+        </div>
+        <h3 class="text-lg font-light text-[#2E2C29] mb-1 tracking-tight">Edit ${esc(ed.label || 'record')}</h3>
+        <p class="text-[11px] text-[#8C8982] mb-4">${esc(ed.doc_type || 'document')}${ed.date ? ' · ' + esc(ed.date) : ''}${ed.name ? ' · ' + esc(ed.name) : ''}</p>
+        <div class="space-y-2.5 mb-5">
+          <div class="flex gap-2 items-center">
+            <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-20 shrink-0">Current</span>
+            <span class="flex-1 bg-white border border-[#EDEBE7] rounded-md px-2.5 py-1.5 text-[12px] text-[#A6A298] line-through truncate">${esc(ed.current || '—')}</span>
+          </div>
+          <div class="flex gap-2 items-center">
+            <span class="text-[10px] font-bold text-[#5D7B6F] uppercase tracking-wider w-20 shrink-0">New value</span>
+            <input id="edit-val-${idx}" value="${esc(ed.proposed ?? '')}" class="flex-1 bg-white border border-[#DFDDDA] rounded-md px-2.5 py-1.5 text-[13px] font-semibold text-[#2E2C29] outline-none focus:border-[#5D7B6F] focus:ring-2 focus:ring-[#5D7B6F]/20" />
+          </div>
+        </div>
+        <div class="flex gap-2.5">
+          <button data-act="edit-cancel" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#C16D54] py-3 rounded-xl text-xs font-extrabold">Cancel</button>
+          <button data-act="edit-confirm" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Confirm &amp; Save</button>
+        </div>
+      </div>`;
+  }
   // low_confidence
   return `
     <div class="bg-white rounded-3xl p-5 shadow-lg border border-[#DEDCD6]">
@@ -625,6 +651,11 @@ function bindInterruptButtons() {
             (p: any) => p.name === val || String(p.id) === val);
           resume = { patient_id: match ? match.id : null };
         }
+      } else if (payload.type === 'confirm_edit') {
+        resume = t.dataset.act === 'edit-confirm'
+          ? { approved: true,
+              proposed: ($(`edit-val-${idx}`) as HTMLInputElement | null)?.value ?? payload.edit?.proposed }
+          : { approved: false };
       } else {
         resume = { proceed: t.dataset.act === 'proceed' };
       }
