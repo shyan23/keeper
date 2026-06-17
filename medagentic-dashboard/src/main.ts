@@ -332,6 +332,32 @@ function renderChatbot() {
   renderDocs();
 }
 
+const INGEST_STEPS = ['Upload', 'OCR', 'Extract', 'Review', 'Index'] as const;
+
+// Map a backend node label to an ingestion step index (defensive substring match).
+function stepFromLabel(label: string): number {
+  const l = label.toLowerCase();
+  if (l.includes('index') || l.includes('chunk') || l.includes('embed')) return 4;
+  if (l.includes('confirm') || l.includes('review') || l.includes('patient')) return 3;
+  if (l.includes('extract') || l.includes('entit')) return 2;
+  if (l.includes('ocr') || l.includes('text') || l.includes('read')) return 1;
+  return 0;
+}
+
+function stepperHtml(active: number): string {
+  return `<div class="flex flex-col gap-2 py-1">${INGEST_STEPS.map((s, i) => {
+    const done = i < active, now = i === active;
+    const dot = done ? `<i data-lucide="check" class="w-3 h-3 text-white"></i>`
+      : now ? `<span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>` : '';
+    const ring = done ? 'bg-[#5D7B6F]' : now ? 'bg-[#C16D54]' : 'bg-[#E0DDD5]';
+    const txt = now ? 'font-bold text-[#2E2C29]' : done ? 'text-[#5D7B6F]' : 'text-[#A6A298]';
+    return `<div class="flex items-center gap-2.5">
+      <span class="w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${ring}">${dot}</span>
+      <span class="text-[12px] ${txt}">${s}</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 function renderMessages() {
   const el = $('chat-messages');
   if (!el) return;
@@ -343,7 +369,7 @@ function renderMessages() {
     return `
       <div class="flex flex-col gap-1.5 max-w-[90%] md:max-w-[85%] ${msg.sender === 'user' ? 'items-end ml-auto' : 'items-start'}">
         <div class="${bubble} p-3 md:p-4 text-[13px] leading-relaxed font-medium">
-          ${esc(msg.text)}${msg.live ? ' <span class="animate-pulse">▍</span>' : ''}
+          ${msg.stepper ? stepperHtml(msg.step ?? 0) : `${esc(msg.text)}${msg.live ? ' <span class="animate-pulse">▍</span>' : ''}`}
           ${msg.sources && msg.sources.length ? `
             <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[#EBEBE6]/60">
               ${msg.sources.map(s => `
@@ -593,8 +619,12 @@ function liveAgent(): ChatMsg {
 
 function streamHandlers(agent: ChatMsg) {
   return {
-    onNode: (label: string) => { agent.text = label; renderMessages(); },
-    onProgress: (msg: string) => { agent.text = msg; renderMessages(); },
+    onNode: (label: string) => {
+      if (agent.stepper) { agent.step = stepFromLabel(label); }
+      else { agent.text = label; }
+      renderMessages();
+    },
+    onProgress: (msg: string) => { if (!agent.stepper) { agent.text = msg; renderMessages(); } },
     onInterrupt: (payload: any) => {
       const i = chats.indexOf(agent);
       if (i >= 0) chats.splice(i, 1);
@@ -602,14 +632,14 @@ function streamHandlers(agent: ChatMsg) {
       render();
     },
     onMessage: (m: { content: string; sources?: CitationSource[] }) => {
-      agent.text = m.content; agent.live = false; agent.sources = m.sources;
+      agent.text = m.content; agent.live = false; agent.stepper = false; agent.sources = m.sources;
       renderMessages();
     },
     onError: (message: string) => {
       agent.text = `⚠️ ${message}`; agent.live = false; renderMessages();
     },
     onDone: async () => {
-      agent.live = false;
+      agent.live = false; agent.stepper = false;
       await loadPatientData();   // ingest may have added records/docs
       render();
     },
@@ -621,6 +651,7 @@ async function handleUpload(file: File) {
   stagedFileName = file.name;
   chats.push({ sender: 'user', text: `📎 ${file.name}`, timestamp: nowIso() });
   const agent = liveAgent();
+  agent.stepper = true; agent.step = 0;   // show the ingestion stepper
   render();
   try {
     const staged = await uploadFile(file);
