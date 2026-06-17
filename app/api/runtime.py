@@ -7,10 +7,9 @@ from typing import Any, Callable
 NODE_LABELS: dict[str, str] = {
     "router": "🧭 Routing your request…",
     "extract_text": "📖 Reading the document (OCR)…",
-    "extract_entities": "🔬 Extracting patient, symptoms, meds, tests…",
+    "segment_extract": "🔬 Splitting reports & extracting…",
     "resolve_patient": "🧑 Matching patient…",
-    "persist": "💾 Saving entities…",
-    "chunk_embed": "📚 Indexing for search…",
+    "persist_reports": "💾 Saving & indexing reports…",
     "parse_filters": "🔎 Parsing your query…",
     "query_db": "🗂️ Looking up records…",
     "plan_edit": "✏️ Finding the record to edit…",

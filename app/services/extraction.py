@@ -12,11 +12,16 @@ _OCR_DPI = 150
 _JPEG_QUALITY = 75
 
 
+# Pages are joined by a form-feed sentinel so callers can recover page
+# boundaries (used to split a multi-report PDF into separate documents).
+_PAGE_SEP = "\f"
+
+
 def _pdf_text(data: bytes) -> str:
     from pypdf import PdfReader
     reader = PdfReader(io.BytesIO(data))
     parts = [(page.extract_text() or "") for page in reader.pages]
-    return "\n".join(parts).strip()
+    return _PAGE_SEP.join(parts).strip()
 
 
 def _pdf_to_images(data: bytes) -> list[bytes]:
@@ -38,12 +43,24 @@ def extract_text(data: bytes, *, mime_type: str, vision, progress=None) -> str:
     `progress(msg)` is an optional callback fired per stage / per page so the UI can
     show live status instead of one long blocking step. `vision` is a VisionLLM.
     """
+    return _extract_raw(data, mime_type=mime_type, vision=vision, progress=progress) \
+        .replace(_PAGE_SEP, "\n\n").strip()
+
+
+def extract_pages(data: bytes, *, mime_type: str, vision, progress=None) -> list[str]:
+    """Same content as extract_text, but split per page (reuses the OCR cache, so
+    no re-OCR). Lets ingestion segment a multi-report PDF by page."""
+    raw = _extract_raw(data, mime_type=mime_type, vision=vision, progress=progress)
+    return [p.strip() for p in raw.split(_PAGE_SEP) if p.strip()]
+
+
+def _extract_raw(data: bytes, *, mime_type: str, vision, progress=None) -> str:
     if mime_type == "text/plain":
         return data.decode("utf-8", errors="replace")
-
     # OCR is the slow, blocking step; cache by content+type so a re-upload of the
-    # same document is instant instead of re-running OCR page by page.
-    key = make_key("ocr", mime_type, data)
+    # same document is instant instead of re-running OCR page by page. Key bumped
+    # to ocr2 since the stored form now uses the page separator.
+    key = make_key("ocr2", mime_type, data)
     return get_or_set(key, lambda: _ocr(data, mime_type, vision, progress))
 
 
@@ -66,7 +83,7 @@ def _ocr(data: bytes, mime_type: str, vision, progress=None) -> str:
         for i, img in enumerate(pages, 1):
             _emit(progress, f"OCR page {i}/{total}…")
             out.append(vision.ocr_image(img, "image/jpeg"))
-        return "\n\n".join(p for p in out if p).strip()
+        return _PAGE_SEP.join(out).strip()
     if mime_type.startswith("image/"):
         _emit(progress, "OCR image…")
         return vision.ocr_image(data, mime_type)

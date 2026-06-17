@@ -6,8 +6,8 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.router import classify_intent
 from app.agent.state import AgentState
 from app.agent.nodes.ingest import (
-    chunk_embed_node, confirm_ingest_node, create_document_node, dedup_check_node,
-    extract_entities_node, extract_text_node, persist_node, resolve_patient_node,
+    confirm_ingest_node, dedup_check_node, extract_text_node, persist_reports_node,
+    resolve_patient_node, segment_extract_node,
 )
 from app.agent.nodes.structured import parse_filters_node, query_db_node
 from app.agent.nodes.edit import confirm_edit_node, plan_edit_node
@@ -38,12 +38,10 @@ def build_graph(checkpointer=None):
     # ingest
     g.add_node("dedup_check", dedup_check_node)
     g.add_node("extract_text", extract_text_node)
-    g.add_node("extract_entities", extract_entities_node)
+    g.add_node("segment_extract", segment_extract_node)
     g.add_node("resolve_patient", resolve_patient_node)
     g.add_node("confirm_ingest", confirm_ingest_node)
-    g.add_node("create_document", create_document_node)
-    g.add_node("persist", persist_node)
-    g.add_node("chunk_embed", chunk_embed_node)
+    g.add_node("persist_reports", persist_reports_node)
     # structured
     g.add_node("parse_filters", parse_filters_node)
     g.add_node("query_db", query_db_node)
@@ -70,18 +68,16 @@ def build_graph(checkpointer=None):
 
     g.add_edge("require_patient", "transform_query")
 
-    # ingest chain — single approval gate (patient + entities reviewed together)
+    # ingest chain — split into reports, single approval gate, then persist each
     g.add_conditional_edges("dedup_check", lambda s: s.get("dedup", "new"),
                             {"duplicate": END, "new": "extract_text"})
-    g.add_edge("extract_text", "extract_entities")
-    g.add_edge("extract_entities", "resolve_patient")
+    g.add_edge("extract_text", "segment_extract")
+    g.add_edge("segment_extract", "resolve_patient")
     g.add_edge("resolve_patient", "confirm_ingest")
     g.add_conditional_edges("confirm_ingest", _after_confirm_ingest, {
-        "rejected": END, "create_document": "create_document",
+        "rejected": END, "create_document": "persist_reports",
     })
-    g.add_edge("create_document", "persist")
-    g.add_edge("persist", "chunk_embed")
-    g.add_edge("chunk_embed", END)
+    g.add_edge("persist_reports", END)
 
     # structured chain
     g.add_edge("parse_filters", "query_db")

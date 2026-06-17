@@ -74,6 +74,8 @@ class AgentState(TypedDict, total=False):
     mime_type: str | None
     source_type: str | None
     ocr_text: str | None
+    pages: list[str]                      # per-page OCR text (for multi-report split)
+    segments: list[dict[str, Any]]        # detected reports -> one document each
     content_hash: str | None              # SHA-256 of file bytes (dedup)
     original_name: str | None             # uploaded filename, stored on the document
     already_ingested: bool                # True when an identical file was found

@@ -19,8 +19,9 @@ from app.services.documents import (
 )
 from app.services.entities import persist_extraction
 from app.services.dates import date_from_text, parse_doc_date
-from app.services.extraction import extract_text
+from app.services.extraction import extract_pages, extract_text
 from app.services.patients import create_patient
+from app.services.segment import doc_type_for, split_reports
 from app.models import Patient
 
 
@@ -38,7 +39,11 @@ def extract_text_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str
     data = Path(state["file_path"]).read_bytes()
     text = extract_text(data, mime_type=state["mime_type"], vision=deps.vision,
                         progress=cfg.get("progress"))
-    return {"ocr_text": text, "content_hash": hashlib.sha256(data).hexdigest()}
+    # Per-page text (from the OCR cache, no re-OCR) so a multi-report scan can be
+    # split into separate documents.
+    pages = extract_pages(data, mime_type=state["mime_type"], vision=deps.vision)
+    return {"ocr_text": text, "pages": pages,
+            "content_hash": hashlib.sha256(data).hexdigest()}
 
 
 def dedup_check_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -66,20 +71,57 @@ def dedup_check_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str,
     return {"dedup": "new", "content_hash": chash}
 
 
-def extract_entities_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    deps = config["configurable"]["deps"]
-    text = state["ocr_text"]
-
-    # Cache the structured extraction by (model, document text): re-ingesting the
-    # same document skips the slow LLM call. Stored as the model_dump() dict.
+def _extract_one(deps, text: str) -> dict[str, Any]:
+    # Cache structured extraction by (model, text): re-ingest skips the slow LLM call.
     key = make_key(f"extract:{get_settings().ollama_model}", text)
-    extracted = get_or_set(
+    return get_or_set(
         key,
         lambda: deps.chat.structured(
             _EXTRACT_PROMPT.format(text=text), ExtractionResult
         ).model_dump(),
     )
-    return {"extracted": extracted}
+
+
+def _report_name(title: str | None, ex: dict[str, Any]) -> str:
+    if title:
+        return title
+    dt = (ex.get("doc_type") or "").strip()
+    return dt.title() if dt else "Medical Report"
+
+
+def segment_extract_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """LLM-split the scan into reports, then extract each separately, so a bundle of
+    5 dated reports becomes 5 documents. Single-report uploads yield one segment.
+    `extracted` (first report, with a patient name filled from any segment) drives
+    patient resolution and the confirm card."""
+    deps = config["configurable"]["deps"]
+    pages = state.get("pages") or [state.get("ocr_text") or ""]
+    segments: list[dict[str, Any]] = []
+    patient_name = None
+    for seg in split_reports(deps.chat, pages):
+        text = seg["text"]
+        ex = _extract_one(deps, text)
+        title = seg.get("title")
+        # Prefer the report's own date: LLM split date, else LLM extraction
+        # doc_date, else scraped from text.
+        rdate = (parse_doc_date(seg.get("date")) or parse_doc_date(ex.get("doc_date"))
+                 or date_from_text(text))
+        # Topic name + category come from the LLM split; fall back to extraction.
+        doc_type = (seg.get("doc_type") if seg.get("doc_type") not in (None, "", "document")
+                    else (ex.get("doc_type") or doc_type_for(title)))
+        segments.append({
+            "name": title or _report_name(None, ex),
+            "doc_type": doc_type or "document",
+            "report_date": rdate.isoformat() if rdate else None,
+            "extracted": ex,
+            "text": text,
+        })
+        if not patient_name:
+            patient_name = ex.get("patient_name")
+    first = dict(segments[0]["extracted"])
+    if patient_name and not first.get("patient_name"):
+        first["patient_name"] = patient_name
+    return {"segments": segments, "extracted": first}
 
 
 # Honorifics / titles that should NOT distinguish two patients.
@@ -125,9 +167,18 @@ def confirm_ingest_node(state: dict[str, Any], config: dict[str, Any]) -> dict[s
     step. The same approval selects/creates the patient and commits the entities."""
     deps = config["configurable"]["deps"]
     ex = state.get("extracted") or {}
+    segments = state.get("segments") or []
+    # Compact summary of every detected report so the human sees the split (e.g.
+    # "5 reports: Haematological Report · 2021-02-25 · 18 items").
+    reports = [{
+        "name": s.get("name"), "doc_type": s.get("doc_type"), "date": s.get("report_date"),
+        "items": (len(s["extracted"].get("tests") or []) + len(s["extracted"].get("diseases") or [])
+                  + len(s["extracted"].get("symptoms") or []) + len(s["extracted"].get("medications") or [])),
+    } for s in segments]
     decision = interrupt({
         "type": "confirm_ingest",
         "extracted": ex,
+        "reports": reports,
         "candidates": state.get("patient_candidates", []),
         "patient_id": state.get("patient_id"),  # set if a single existing match
         "extracted_name": ex.get("patient_name"),
@@ -138,6 +189,9 @@ def confirm_ingest_node(state: dict[str, Any], config: dict[str, Any]) -> dict[s
         return {"extracted": None, "intent": "rejected"}
 
     extracted = decision.get("extracted", ex)
+    # Apply any human edits from the card back onto the first report.
+    if segments:
+        segments = [{**segments[0], "extracted": extracted}] + segments[1:]
     # Patient: use the chosen/pre-matched id, else create a new profile.
     pid = decision.get("patient_id") or state.get("patient_id")
     if pid is None:
@@ -149,94 +203,75 @@ def confirm_ingest_node(state: dict[str, Any], config: dict[str, Any]) -> dict[s
                 gender=decision.get("gender") or extracted.get("patient_gender"),
             )
             pid = p.id
-    return {"extracted": extracted, "patient_id": int(pid)}
+    return {"extracted": extracted, "segments": segments, "patient_id": int(pid)}
 
 
-def create_document_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """Create the document row now that the patient is known, then move the staged
-    file into the patient-scoped path. (Document creation is deferred to here so the
-    agent — not the user — determines the patient.)"""
-    deps = config["configurable"]["deps"]
-    if state.get("document_id"):
-        return {}  # document already exists (e.g. re-ingest of an existing doc)
-    ex = state.get("extracted") or {}
-    ext = state.get("file_ext") or "bin"
-    staged = state.get("file_path")
-    chash = state.get("content_hash")
-
-    # Idempotency: if this exact file was already ingested, reuse that document
-    # and skip persist/index so the same upload can't duplicate entities.
-    if chash:
-        with deps.session_factory() as s:
-            existing = find_by_content_hash(s, chash)
-            dup = (existing.id, existing.patient_id) if existing is not None else None
-        if dup is not None:
-            if staged and os.path.exists(staged):
-                try:
-                    os.remove(staged)
-                except OSError:
-                    pass
-            return {"document_id": dup[0], "patient_id": dup[1],
-                    "already_ingested": True}
-
-    # Date priority: LLM-extracted doc_date, else scrape it from the OCR text,
-    # else None (the read side falls back to upload time only as a last resort).
-    report_date = parse_doc_date(ex.get("doc_date")) or date_from_text(state.get("ocr_text"))
-    with deps.session_factory() as s:
-        doc = create_document(
-            s, patient_id=state["patient_id"], doc_type=ex.get("doc_type"),
-            source_type=state.get("source_type"), mime_type=state.get("mime_type"),
-            content_hash=chash,
-            report_date=report_date,
-            original_name=state.get("original_name"),
-        )
-        doc_id = doc.id
-        final_path = staged
-        if staged and os.path.exists(staged):
-            data = Path(staged).read_bytes()
-            final_path = storage.save_bytes(state["patient_id"], doc_id, ext, data)
-            set_file_path(s, doc_id, final_path)
-            try:
-                os.remove(staged)
-            except OSError:
-                pass
-    return {"document_id": doc_id, "file_path": final_path}
-
-
-def persist_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+def persist_reports_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Create one document PER detected report (own date, topic name, entities,
+    chunks). All share the original file so each card opens the same PDF. Patient is
+    already resolved by the confirm gate."""
     if state.get("already_ingested"):
         return {"messages": state["messages"] + [{
             "role": "assistant",
             "content": "This document was already on file — skipped to avoid duplicates.",
         }]}
     deps = config["configurable"]["deps"]
-    result = ExtractionResult(**state["extracted"])
-    with deps.session_factory() as s:
-        n = persist_extraction(s, document_id=state["document_id"], result=result)
-    pname = (state.get("extracted") or {}).get("patient_name") or "patient"
-    return {"messages": state["messages"] + [
-        {"role": "assistant", "content": f"Saved {n} entities for {pname}."}
-    ]}
+    pid = state["patient_id"]
+    ext = state.get("file_ext") or "bin"
+    staged = state.get("file_path")
+    chash = state.get("content_hash")
+    segments = state.get("segments") or [{
+        "name": state.get("original_name"),
+        "doc_type": (state.get("extracted") or {}).get("doc_type") or "document",
+        "report_date": None, "extracted": state.get("extracted") or {},
+        "text": state.get("ocr_text") or "",
+    }]
+    data = (Path(staged).read_bytes() if staged and os.path.exists(staged) else None)
 
-
-def chunk_embed_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    if state.get("already_ingested"):
-        return {}  # already indexed on the first ingest
-    deps = config["configurable"]["deps"]
-    ex = state["extracted"]
-    header = f"{ex.get('patient_name') or ''} · {ex.get('doc_type') or 'doc'} · {ex.get('doc_date') or ''}".strip()
+    titles: list[str] = []
+    total_entities = 0
+    total_chunks = 0
     with deps.session_factory() as s:
-        doc = get_document(s, state["document_id"])
-        if doc is not None and state.get("ocr_text"):
-            doc.raw_ocr_text = state["ocr_text"]
-            doc.status = "indexed"
-            s.commit()
-        text = state.get("ocr_text") or ""
-        chunks = make_semantic_chunks(text, deps.embedder, header=header) if text else []
-        n = chunk_and_embed(
-            s, document_id=state["document_id"], patient_id=state["patient_id"],
-            text=text, header=header, embedder=deps.embedder, chunks=chunks or None,
-        )
-    return {"messages": state["messages"] + [
-        {"role": "assistant", "content": f"Indexed {n} chunks. Ingestion complete."}
-    ]}
+        for seg in segments:
+            ex = seg["extracted"]
+            result = ExtractionResult(**ex)
+            rdate = (parse_doc_date(seg.get("report_date"))
+                     or parse_doc_date(ex.get("doc_date"))
+                     or date_from_text(seg.get("text")))
+            doc = create_document(
+                s, patient_id=pid, doc_type=seg.get("doc_type") or ex.get("doc_type"),
+                source_type=state.get("source_type"), mime_type=state.get("mime_type"),
+                content_hash=chash, report_date=rdate,
+                original_name=seg.get("name") or state.get("original_name"),
+            )
+            doc_id = doc.id
+            if data is not None:
+                set_file_path(s, doc_id, storage.save_bytes(pid, doc_id, ext, data))
+            total_entities += persist_extraction(s, document_id=doc_id, result=result)
+            text = seg.get("text") or ""
+            header = (f"{ex.get('patient_name') or ''} · {seg.get('name') or 'doc'} · "
+                      f"{seg.get('report_date') or ''}").strip()
+            d2 = get_document(s, doc_id)
+            if d2 is not None and text:
+                d2.raw_ocr_text = text
+                d2.status = "indexed"
+                s.commit()
+            chunks = make_semantic_chunks(text, deps.embedder, header=header) if text else []
+            total_chunks += chunk_and_embed(
+                s, document_id=doc_id, patient_id=pid, text=text, header=header,
+                embedder=deps.embedder, chunks=chunks or None,
+            )
+            titles.append(seg.get("name") or "report")
+
+    if staged and os.path.exists(staged):
+        try:
+            os.remove(staged)
+        except OSError:
+            pass
+
+    if len(titles) > 1:
+        msg = (f"Split into {len(titles)} reports — {', '.join(titles)}. "
+               f"Saved {total_entities} entities, indexed {total_chunks} chunks.")
+    else:
+        msg = f"Saved {total_entities} entities, indexed {total_chunks} chunks. Ingestion complete."
+    return {"messages": state["messages"] + [{"role": "assistant", "content": msg}]}
