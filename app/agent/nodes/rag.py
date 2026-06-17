@@ -5,6 +5,7 @@ from typing import Any
 from langgraph.types import interrupt
 
 from app.config import get_settings
+from app.models import Patient
 from app.services.retrieval import search_chunks
 
 _HYDE_PROMPT = """Write a brief, plausible answer paragraph to this medical question as if quoting a patient's medical record. Used only to improve document retrieval; do not refuse.
@@ -42,6 +43,20 @@ def _to_score(raw: str) -> float:
         return float(raw.strip().split()[0])
     except (ValueError, IndexError, AttributeError):
         return 0.0
+
+
+def require_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """If no patient is resolved (query named none, none selected), ask which patient.
+    The client renders an autocomplete picker; resume carries the chosen patient_id."""
+    if state.get("patient_id"):
+        return {}
+    deps = config["configurable"]["deps"]
+    with deps.session_factory() as s:
+        patients = [{"id": p.id, "name": p.name}
+                    for p in s.query(Patient).order_by(Patient.name).all()]
+    decision = interrupt({"type": "patient_pick", "patients": patients})
+    pid = decision.get("patient_id")
+    return {"patient_id": int(pid)} if pid else {}
 
 
 def transform_query_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:

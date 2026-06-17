@@ -97,3 +97,35 @@ def test_correct_query_sets_corrected_flag():
 def test_confirm_low_conf_skips_when_empty_hits():
     out = confirm_low_confidence_node({"low_confidence": True, "retrieved": []}, _cfg(_FakeChat("x")))
     assert out == {}
+
+
+def test_require_patient_passes_when_set():
+    from app.agent.nodes.rag import require_patient_node
+    out = require_patient_node({"patient_id": 3}, _cfg(_FakeChat("")))
+    assert out == {}
+
+
+def test_require_patient_asks_then_resumes(monkeypatch):
+    """No patient -> interrupt with a picker; the resumed choice becomes patient_id."""
+    import app.agent.nodes.rag as rag_mod
+    from app.agent.nodes.rag import require_patient_node
+
+    class _FakeSession:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def query(self, *a): return self
+        def order_by(self, *a): return self
+        def all(self): return []
+
+    captured = {}
+
+    def fake_interrupt(payload):
+        captured["payload"] = payload
+        return {"patient_id": 9}  # simulate the human's pick on resume
+
+    monkeypatch.setattr(rag_mod, "interrupt", fake_interrupt)
+    cfg = _cfg(_FakeChat(""))
+    cfg["configurable"]["deps"].session_factory = lambda: _FakeSession()
+    out = require_patient_node({"patient_id": None}, cfg)
+    assert captured["payload"]["type"] == "patient_pick"
+    assert out == {"patient_id": 9}

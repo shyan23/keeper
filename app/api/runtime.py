@@ -13,6 +13,7 @@ NODE_LABELS: dict[str, str] = {
     "chunk_embed": "📚 Indexing for search…",
     "parse_filters": "🔎 Parsing your query…",
     "query_db": "🗂️ Looking up records…",
+    "require_patient": "🧑 Identifying the patient…",
     "transform_query": "✍️ Reformulating the query…",
     "retrieve": "🔍 Searching documents…",
     "rerank": "📊 Ranking results…",

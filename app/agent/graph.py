@@ -12,7 +12,7 @@ from app.agent.nodes.ingest import (
 from app.agent.nodes.structured import parse_filters_node, query_db_node
 from app.agent.nodes.rag import (
     confirm_low_confidence_node, correct_query_node, generate_answer_node,
-    grade_node, rerank_node, retrieve_node, transform_query_node,
+    grade_node, require_patient_node, rerank_node, retrieve_node, transform_query_node,
 )
 
 
@@ -47,6 +47,7 @@ def build_graph(checkpointer=None):
     g.add_node("parse_filters", parse_filters_node)
     g.add_node("query_db", query_db_node)
     # rag
+    g.add_node("require_patient", require_patient_node)
     g.add_node("transform_query", transform_query_node)
     g.add_node("retrieve", retrieve_node)
     g.add_node("rerank", rerank_node)
@@ -59,8 +60,10 @@ def build_graph(checkpointer=None):
     g.add_conditional_edges("router", _route, {
         "ingest": "dedup_check",
         "structured_query": "parse_filters",
-        "rag_query": "transform_query",
+        "rag_query": "require_patient",
     })
+
+    g.add_edge("require_patient", "transform_query")
 
     # ingest chain — single approval gate (patient + entities reviewed together)
     g.add_conditional_edges("dedup_check", lambda s: s.get("dedup", "new"),
