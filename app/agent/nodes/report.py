@@ -3,18 +3,19 @@ deliver_report (delivery). Between them, build_report runs automatically."""
 from __future__ import annotations
 
 import datetime as dt
-from pathlib import Path  # noqa: F401
+from pathlib import Path
 from typing import Any
 
+import fitz
 from langgraph.types import interrupt
 
-import app.storage as storage  # noqa: F401
+import app.storage as storage
 from app.agent.nodes.ingest import _normalize_name
 from app.models import Patient
-from app.services import charts as charts_svc  # noqa: F401
-from app.services import pdf as pdf_svc  # noqa: F401
+from app.services import charts as charts_svc
+from app.services import pdf as pdf_svc
 from app.services import report as report_svc
-from app.services import trends  # noqa: F401
+from app.services import trends
 
 _SECTIONS = ["Cover", "Patient Information", "Disease Summary", "Symptoms Summary",
              "Medical Test Results", "Charts & Trends", "Timeline", "Attachments"]
@@ -105,3 +106,66 @@ def confirm_report_node(state: dict[str, Any], config: dict[str, Any]) -> dict[s
                 "report_request": {**(state.get("report_request") or {}), **mods},
                 "report_plan": None}
     return {"report_decision": "build"}
+
+
+def _window(plan: dict) -> tuple[dt.date | None, dt.date | None]:
+    lo = dt.date.fromisoformat(plan["date_from"]) if plan.get("date_from") else None
+    hi = dt.date.fromisoformat(plan["date_to"]) if plan.get("date_to") else None
+    return lo, hi
+
+
+def _in_window_point(date_str: str, lo, hi) -> bool:
+    d = dt.date.fromisoformat(date_str)
+    return (lo is None or d >= lo) and (hi is None or d <= hi)
+
+
+def build_report_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Aggregate -> charts -> assemble PDF -> store. Runs between the two gates."""
+    deps = config["configurable"]["deps"]
+    progress = config["configurable"].get("progress")
+    req = state.get("report_request") or {}
+    plan = state["report_plan"]
+    pid = plan["patient_id"]
+    lo, hi = _window(plan)
+
+    if progress:
+        progress("Aggregating records…")
+    with deps.session_factory() as s:
+        data = report_svc.gather(s, pid, req.get("doc_types") or [], lo, hi)
+        data["timeframe_label"] = plan.get("timeframe_label")
+        if progress:
+            progress("Rendering charts…")
+        charts: list[tuple[str, bytes]] = []
+        for m in trends.list_metrics(s, pid):
+            series = trends.metric_series(s, pid, m["key"])
+            series["points"] = [p for p in series["points"]
+                                if _in_window_point(p["date"], lo, hi)]
+            if len(series["points"]) >= 2:
+                charts.append((f"{m['label']} over time",
+                               charts_svc.render_metric_chart(series)))
+    if progress:
+        progress("Assembling PDF…")
+    pdf_bytes = pdf_svc.build_report(data, charts, data["attachments"])
+    path = storage.save_report(pdf_bytes)
+    url = f"/api/chat/report/{Path(path).name}"
+    return {"report_path": path, "report_url": url, "report_decision": None,
+            "report_plan": {**plan, "chart_count": len(charts),
+                            "page_count": fitz.open("pdf", pdf_bytes).page_count}}
+
+
+def deliver_report_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Gate B. Present the built report; Download finishes, Regenerate loops back."""
+    url = state.get("report_url")
+    plan = state.get("report_plan") or {}
+    summary = {
+        "url": url,
+        "sections": _SECTIONS,
+        "page_count": plan.get("page_count"),
+        "chart_count": plan.get("chart_count"),
+        "attachment_count": (plan.get("counts") or {}).get("attachments"),
+    }
+    decision = interrupt({"type": "confirm_delivery", "summary": summary})
+    if decision.get("regenerate"):
+        return {"report_decision": "rebuild"}
+    return _say(state, f"Your report is ready. [Download the PDF]({url})",
+                report_url=url, report_decision="end")
