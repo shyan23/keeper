@@ -1,4 +1,4 @@
-.PHONY: run ui dev
+.PHONY: run ui dev eval eval-retrieval
 
 # Backend API (single worker: in-process agent checkpointer).
 run:
@@ -12,3 +12,11 @@ ui:
 dev:
 	uvicorn app.api.server:app --port 8000 --workers 1 & \
 	cd medagentic-dashboard && npm run dev
+
+# Deterministic eval (extraction quality). Uses the free chat model, no DB.
+eval:
+	python -m app.eval
+
+# Also run retrieval recall@k (needs TEST_DATABASE_URL + Ollama embedder).
+eval-retrieval:
+	python -m app.eval --retrieval

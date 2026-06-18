@@ -1,0 +1,138 @@
+# Golden set for the deterministic eval harness.
+#
+# SYNTHETIC + DE-IDENTIFIED. Every patient/doctor name and value here is invented —
+# safe to commit and publish. Replace/extend with hand-labeled cases over your own
+# real reports for a number that reflects your actual corpus (keep real PHI OUT of
+# version control; point the harness at a private golden file instead).
+#
+# Two suites:
+#   extraction: text -> model -> compare structured fields (no DB needed)
+#   retrieval:  seed chunks -> search_chunks -> recall@k (needs TEST_DATABASE_URL)
+#
+# `expect` only lists fields you want graded — omit a field to ignore it.
+
+extraction:
+  - id: cbc-basic
+    text: |
+      ACME DIAGNOSTIC CENTRE
+      Complete Blood Count (CBC)
+      Patient: Mr. John Akram        Age: 45 / Male
+      Referred by: Dr. Salma Rahman
+      Date: 2023-05-01
+
+      Test                Result     Unit          Reference
+      Haemoglobin         13.5       g/dL          13.0 - 17.0
+      RBC Count           4.8        million/uL    4.5 - 5.5
+      WBC Count           7200       /uL           4000 - 11000
+      Platelet Count      250000     /uL           150000 - 410000
+    expect:
+      patient_name: John Akram
+      patient_age: 45
+      patient_gender: male
+      doc_type: CBC
+      doc_date: 2023-05-01
+      doctor: Salma Rahman
+      tests:
+        - {name: Haemoglobin, value: "13.5"}
+        - {name: RBC Count, value: "4.8"}
+        - {name: WBC Count, value: "7200"}
+        - {name: Platelet Count, value: "250000"}
+
+  - id: lipid-profile
+    text: |
+      CITY PATHOLOGY LAB — Lipid Profile
+      Name: Mrs. Nafisa Kabir, Age 52, Female
+      Report Date: 12/03/2024
+      Total Cholesterol .......... 210 mg/dL  (<200)
+      HDL Cholesterol ............ 45 mg/dL   (>40)
+      LDL Cholesterol ............ 138 mg/dL  (<100)
+      Triglycerides .............. 165 mg/dL  (<150)
+    expect:
+      patient_name: Nafisa Kabir
+      patient_age: 52
+      patient_gender: female
+      doc_date: 2024-03-12
+      tests:
+        - {name: Total Cholesterol, value: "210"}
+        - {name: HDL Cholesterol, value: "45"}
+        - {name: LDL Cholesterol, value: "138"}
+        - {name: Triglycerides, value: "165"}
+
+  - id: prescription
+    text: |
+      Dr. Imran Hossain, MBBS, FCPS (Medicine)
+      Patient: Rafiq Islam, 60 years, Male        Date: 2024-01-20
+      Diagnosis: Type 2 Diabetes Mellitus, Hypertension
+      Complaints: increased thirst, frequent urination, fatigue
+      Rx:
+        1. Tab Metformin 500 mg  - twice daily
+        2. Tab Amlodipine 5 mg   - once daily
+    expect:
+      patient_name: Rafiq Islam
+      patient_age: 60
+      patient_gender: male
+      doc_date: 2024-01-20
+      doctor: Imran Hossain
+      diseases:
+        - {name: Type 2 Diabetes Mellitus}
+        - {name: Hypertension}
+      symptoms:
+        - {name: increased thirst}
+        - {name: frequent urination}
+        - {name: fatigue}
+      medications:
+        - {name: Metformin}
+        - {name: Amlodipine}
+
+  - id: xray-narrative
+    text: |
+      RADIOLOGY DEPARTMENT — Chest X-Ray PA View
+      Name: Mrs. Ayesha Noor    Age/Sex: 38/F     Date: 2023-11-09
+      Findings:
+        Lung fields: clear, no focal consolidation.
+        Heart: cardiothoracic ratio within normal limits.
+        Bony thorax: no fracture or lytic lesion.
+      Impression: No active cardiopulmonary disease.
+    expect:
+      patient_name: Ayesha Noor
+      patient_age: 38
+      patient_gender: female
+      doc_date: 2023-11-09
+      tests:
+        - {name: Lung fields, value: clear}
+        - {name: Heart, value: normal}
+        - {name: Impression, value: No active cardiopulmonary disease}
+
+retrieval:
+  - id: hb-latest
+    question: what is her hemoglobin?
+    documents:
+      - doc_type: CBC
+        report_date: 2024-06-01
+        original_name: cbc_jun.pdf
+        chunks:
+          - "Haemoglobin 12.1 g/dL reference 12.0 - 16.0. RBC 4.2 million/uL."
+          - "WBC 6800 /uL. Platelet 230000 /uL."
+      - doc_type: LIPID PROFILE
+        report_date: 2024-01-01
+        original_name: lipid_jan.pdf
+        chunks:
+          - "Total cholesterol 195 mg/dL. LDL 110 mg/dL. HDL 48 mg/dL."
+    expect:
+      retrieved_doc: cbc_jun.pdf
+
+  - id: vitamind
+    question: what was the vitamin D level?
+    documents:
+      - doc_type: BIOCHEMISTRY
+        report_date: 2024-02-15
+        original_name: vitd_feb.pdf
+        chunks:
+          - "Vitamin D (25-OH) 28 ng/mL. Insufficient (<30)."
+      - doc_type: CBC
+        report_date: 2024-02-10
+        original_name: cbc_feb.pdf
+        chunks:
+          - "Haemoglobin 14.0 g/dL. RBC 5.0 million/uL."
+    expect:
+      retrieved_doc: vitd_feb.pdf
