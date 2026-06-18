@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from difflib import SequenceMatcher
 from typing import Any
 
 from pydantic import BaseModel
@@ -14,6 +16,29 @@ class _Filters(BaseModel):
     patient_name: str | None = None
     doc_type: str | None = None
     latest: bool = False
+
+
+# Generic words that carry no report identity — dropped before matching so
+# "lipid profile report" still hits a doc named just "Lipid Profile".
+_NOISE = {"report", "reports", "test", "tests", "result", "results", "the", "of"}
+_FUZZ = 0.8  # min SequenceMatcher ratio to call two words the same
+
+
+def _doc_matches(term: str, doc: Document) -> bool:
+    """Fuzzy: every meaningful word in `term` must appear — exactly, as a
+    substring, or close enough (Levenshtein-ish ratio) — in the doc's category,
+    type, or filename. Tolerates spelling drift like haemotology/haematology/
+    hematology that exact SQL LIKE misses."""
+    words = [w for w in re.findall(r"[a-z0-9]+", term.lower()) if w not in _NOISE]
+    if not words:
+        return True
+    hay = " ".join(filter(None, [doc.classification, doc.doc_type, doc.original_name]))
+    hay_words = re.findall(r"[a-z0-9]+", hay.lower())
+    for w in words:
+        if not any(w in hw or hw in w or SequenceMatcher(None, w, hw).ratio() >= _FUZZ
+                   for hw in hay_words):
+            return False
+    return True
 
 
 _PROMPT = """From the user's request extract: patient_name, doc_type (or null), and
@@ -47,14 +72,18 @@ def query_db_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, An
             q = q.filter(Document.patient_id.in_(ids or [-1]))
         elif state.get("patient_id"):
             q = q.filter(Document.patient_id == state["patient_id"])
-        if f.get("doc_type"):
-            q = q.filter(func.lower(Document.doc_type).like(f"%{f['doc_type'].lower()}%"))
         q = q.order_by(
             func.coalesce(Document.report_date, func.date(Document.uploaded_at)).desc(),
             Document.id.desc(),
         )
-        limit = 1 if f.get("latest") else 10
-        docs = q.limit(limit).all()
+        # Patient scope keeps this to a handful of rows, so fuzzy-match the report
+        # name in Python (SQL LIKE can't bridge spelling variants) over the already
+        # date-ordered list, then take the limit.
+        # ponytail: O(docs_per_patient) scan; fine at this scale, swap to pg_trgm if a
+        # patient ever has thousands of docs.
+        term = f.get("doc_type")
+        docs = [d for d in q.all() if not term or _doc_matches(term, d)]
+        docs = docs[: 1 if f.get("latest") else 10]
         rows = [{"document_id": d.id, "doc_type": d.doc_type,
                  "name": d.original_name or f"document-{d.id}",
                  "date": (d.report_date.strftime("%Y-%m-%d") if d.report_date

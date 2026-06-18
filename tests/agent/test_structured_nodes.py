@@ -34,7 +34,31 @@ def test_query_db_returns_latest_document(db_session_factory):
         p = create_patient(s, name="Latest Query Pt")
         create_document(s, patient_id=p.id, doc_type="lab_report")
         create_document(s, patient_id=p.id, doc_type="prescription")
-    state = {"query_filters": {"patient_name": "Latest Query Pt", "doc_type": None, "latest": True}}
+    state = {"messages": [],
+             "query_filters": {"patient_name": "Latest Query Pt", "doc_type": None, "latest": True}}
     out = query_db_node(state, _cfg(sf=sf))
     assert "prescription" in out["answer"] or "lab_report" in out["answer"]
     assert out["citations"]
+
+
+def test_query_db_matches_report_name_per_word_picks_latest(db_session_factory):
+    # Real bug: "lipid profile report" full-string-matched only the older doc
+    # literally named "Lipid Profile Report", skipping the newer "Lipid Profile".
+    # Per-word match (noise word "report" dropped) must pick the latest of both.
+    import datetime as dt
+    from app.services.patients import create_patient
+    from app.services.documents import create_document
+    sf = db_session_factory
+    with sf() as s:
+        p = create_patient(s, name="Lipid Pt")
+        create_document(s, patient_id=p.id, doc_type="lab",
+                        original_name="Lipid Profile Report",
+                        report_date=dt.date(2020, 10, 5))
+        create_document(s, patient_id=p.id, doc_type="lab",
+                        original_name="Lipid Profile",
+                        report_date=dt.date(2021, 2, 25))
+    state = {"messages": [],
+             "query_filters": {"patient_name": "Lipid Pt",
+                               "doc_type": "lipid profile report", "latest": True}}
+    out = query_db_node(state, _cfg(sf=sf))
+    assert "2021-02-25" in out["answer"]  # newest, not the 2020 "…Report"
