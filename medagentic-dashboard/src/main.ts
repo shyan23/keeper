@@ -4,6 +4,7 @@ import {
   createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
   resumeChat, streamChat, uploadFile,
 } from './api';
+import { groupDocsByYear } from './grouping';
 
 declare const lucide: any;
 
@@ -284,31 +285,58 @@ function tableShell(headCols: string, rows: string): string {
 }
 
 function documentsTableHtml(list: ApiDocument[]): string {
+  const groups = groupDocsByYear(list, sortOrder === 'desc');
   const head = `
-    <div class="grid grid-cols-[1fr_5.5rem_6rem_4.5rem] sm:grid-cols-[1fr_8rem_7rem_5rem] gap-3 items-center px-4 h-10 text-[10px] uppercase tracking-widest text-[#A6A298] font-bold">
-      <span>Document</span><span>Type</span><span class="text-right">Date</span><span class="text-right">Actions</span>
+    <div class="grid grid-cols-[1fr_6rem] gap-3 items-center px-4 h-10 text-[10px] uppercase tracking-widest text-[#A6A298] font-bold">
+      <span>Year</span><span class="text-right">Reports</span>
     </div>`;
-  const rows = list.map(d => {
-    const color = d.date ? dateColor(d.date) : '#e6bb4d';
-    const url = docFileUrl(d.id);
+  const rows = groups.map(g => {
+    const key = `year:${g.year}`;
+    const open = expandedCards.has(key);
+    const body = open ? `
+      <div class="px-4 pb-3 pt-1 bg-[#FCFBF8] border-b border-[#F4F3EF]">
+        ${g.categories.map(c => `
+          <div class="mt-2 first:mt-1">
+            <div class="text-[10px] uppercase tracking-widest text-[#A6A298] font-bold px-1 pb-1">
+              ${esc(c.category)} <span class="text-[#C9C6BD]">(${c.docs.length})</span>
+            </div>
+            ${c.docs.map(d => docRowHtml(d)).join('')}
+          </div>`).join('')}
+      </div>` : '';
     return `
-      <div class="group grid grid-cols-[1fr_5.5rem_6rem_4.5rem] sm:grid-cols-[1fr_8rem_7rem_5rem] gap-3 items-center px-4 min-h-[44px] py-1.5 border-b border-[#F4F3EF] last:border-0 hover:bg-[#FAF9F5] transition-colors duration-150">
-        <a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(d.name)}"
-           class="flex items-center gap-2.5 min-w-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F] focus-visible:ring-offset-1">
-          <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${color}"></span>
-          <i data-lucide="file-text" class="w-4 h-4 text-[#8C8982] shrink-0"></i>
-          <span class="text-[13px] font-semibold text-[#2E2C29] truncate">${esc(d.name)}</span>
-        </a>
-        <span class="text-[9px] font-bold uppercase tracking-widest text-[#7E8B83] bg-[#EEF1EF] px-2 py-1 rounded-md truncate justify-self-start">${esc(d.type || 'file')}</span>
-        <span class="text-[12px] text-[#59554D] tabular-nums text-right whitespace-nowrap">${d.date ? esc(formatDate(d.date)) : '—'}</span>
-        <span class="flex items-center gap-0.5 justify-end">
-          <a href="${esc(url)}" target="_blank" rel="noopener" aria-label="Open PDF" title="Open PDF"
-             class="w-9 h-9 flex items-center justify-center text-[#5D7B6F] hover:text-[#3f5b50] rounded-lg hover:bg-[#EEF2F0] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F]"><i data-lucide="external-link" class="w-4 h-4"></i></a>
-          <button class="del-doc w-9 h-9 flex items-center justify-center text-[#C0857A] hover:text-[#a3553f] rounded-lg hover:bg-[#F5EDE9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C16D54]" data-id="${esc(d.id)}" data-label="${esc(d.name)}" aria-label="Delete document" title="Delete"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-        </span>
+      <div class="border-b border-[#F4F3EF] last:border-0">
+        <button class="card-toggle w-full grid grid-cols-[1fr_6rem] gap-3 items-center px-4 min-h-[44px] py-1.5 text-left hover:bg-[#FAF9F5] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F] focus-visible:ring-inset ${open ? 'bg-[#FAF9F5]' : ''}" data-key="${esc(key)}" aria-expanded="${open}">
+          <span class="flex items-center gap-2 min-w-0">
+            <i data-lucide="chevron-${open ? 'down' : 'right'}" class="w-4 h-4 text-[#A6A298] shrink-0"></i>
+            <span class="text-[13px] font-semibold text-[#2E2C29]">${esc(g.year)}</span>
+          </span>
+          <span class="text-[12px] text-[#8C8982] tabular-nums text-right">${g.total}</span>
+        </button>
+        ${body}
       </div>`;
   }).join('');
   return tableShell(head, rows);
+}
+
+// A single document line inside an expanded year/category group.
+function docRowHtml(d: ApiDocument): string {
+  const color = d.date ? dateColor(d.date) : '#e6bb4d';
+  const url = docFileUrl(d.id);
+  return `
+    <div class="group grid grid-cols-[1fr_5.5rem_4.5rem] sm:grid-cols-[1fr_7rem_5rem] gap-3 items-center px-2 min-h-[40px] py-1 hover:bg-[#FAF9F5] rounded-lg transition-colors duration-150">
+      <a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(d.name)}"
+         class="flex items-center gap-2.5 min-w-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F]">
+        <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${color}"></span>
+        <i data-lucide="file-text" class="w-4 h-4 text-[#8C8982] shrink-0"></i>
+        <span class="text-[13px] font-medium text-[#2E2C29] truncate">${esc(d.name)}</span>
+      </a>
+      <span class="text-[12px] text-[#59554D] tabular-nums text-right whitespace-nowrap">${d.date ? esc(formatDate(d.date)) : '—'}</span>
+      <span class="flex items-center gap-0.5 justify-end">
+        <a href="${esc(url)}" target="_blank" rel="noopener" aria-label="Open PDF" title="Open PDF"
+           class="w-8 h-8 flex items-center justify-center text-[#5D7B6F] hover:text-[#3f5b50] rounded-lg hover:bg-[#EEF2F0]"><i data-lucide="external-link" class="w-4 h-4"></i></a>
+        <button class="del-doc w-8 h-8 flex items-center justify-center text-[#C0857A] hover:text-[#a3553f] rounded-lg hover:bg-[#F5EDE9]" data-id="${esc(d.id)}" data-label="${esc(d.name)}" aria-label="Delete document" title="Delete"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+      </span>
+    </div>`;
 }
 
 // ---- entity tabs: group a type's records per source document; expandable rows ----
