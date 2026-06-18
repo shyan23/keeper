@@ -785,6 +785,40 @@ function interruptCardHtml(payload: any, idx: number) {
         </div>
       </div>`;
   }
+  if (payload.type === 'confirm_report') {
+    const p = payload.plan || {};
+    const docs = (p.documents || []).map((d: any) =>
+      `<li class="truncate">${esc(d.name)} · ${esc(d.type || 'document')}${d.date ? ' · ' + esc(d.date) : ''}</li>`).join('');
+    return `
+      <div class="bg-gradient-to-br from-[#F5F4F0] to-[#E9E8E1] rounded-3xl p-5 md:p-6 shadow-lg border border-[#DEDCD6]">
+        <div class="flex items-center gap-2 mb-3 text-[#5D7B6F]">
+          <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+          <span class="font-extrabold text-[9px] tracking-widest uppercase">Human in the loop — approve this report plan</span>
+        </div>
+        <h3 class="text-lg font-light text-[#2E2C29] mb-1 tracking-tight">${esc(p.patient_name)}</h3>
+        <p class="text-[11px] text-[#8C8982] mb-3">${esc(p.timeframe_label)} · ${(p.counts?.documents ?? 0)} document(s)</p>
+        <ul class="list-disc ml-5 my-1 text-[12px] text-[#5C5852] space-y-0.5 mb-5">${docs}</ul>
+        <div class="flex gap-2.5">
+          <button data-act="cancel" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#C16D54] py-3 rounded-xl text-xs font-extrabold">Cancel</button>
+          <button data-act="confirm" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Approve</button>
+        </div>
+      </div>`;
+  }
+  if (payload.type === 'confirm_delivery') {
+    const s = payload.summary || {};
+    return `
+      <div class="bg-gradient-to-br from-[#F5F4F0] to-[#E9E8E1] rounded-3xl p-5 md:p-6 shadow-lg border border-[#DEDCD6]">
+        <div class="flex items-center gap-2 mb-3 text-[#5D7B6F]">
+          <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+          <span class="font-extrabold text-[9px] tracking-widest uppercase">Report ready</span>
+        </div>
+        <p class="text-[12px] text-[#5C5852] mb-5">${s.page_count ?? '?'} pages · ${s.chart_count ?? 0} chart(s) · ${s.attachment_count ?? 0} attachment(s)</p>
+        <div class="flex gap-2.5">
+          <button data-act="regenerate" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#5D7B6F] py-3 rounded-xl text-xs font-extrabold">Regenerate</button>
+          <a href="${esc(s.url)}" target="_blank" class="flex-[2] text-center bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Download</a>
+        </div>
+      </div>`;
+  }
   // low_confidence
   return `
     <div class="bg-white rounded-3xl p-5 shadow-lg border border-[#DEDCD6]">
@@ -869,13 +903,20 @@ function bindInterruptButtons() {
           ? { approved: true,
               proposed: ($(`edit-val-${idx}`) as HTMLInputElement | null)?.value ?? payload.edit?.proposed }
           : { approved: false };
+      } else if (payload.type === 'confirm_report') {
+        resume = t.dataset.act === 'confirm' ? { approved: true } : { approved: false };
+      } else if (payload.type === 'confirm_delivery') {
+        resume = t.dataset.act === 'regenerate' ? { regenerate: true } : { approved: true };
       } else {
         resume = { proceed: t.dataset.act === 'proceed' };
       }
       chats.splice(idx, 1); // remove the card (after reading its inputs)
-      // Confirming an ingest kicks off persist+index work — show the stepper
-      // (spinner per step) instead of a bare "Thinking…" line.
-      runResume(resume, payload.type === 'confirm_ingest' && t.dataset.act === 'confirm');
+      // Confirming an ingest, building, or regenerating a report kicks off
+      // multi-step work — show the stepper instead of a bare "Thinking…" line.
+      const showStepper = (payload.type === 'confirm_ingest' && t.dataset.act === 'confirm')
+        || (payload.type === 'confirm_report' && t.dataset.act === 'confirm')
+        || (payload.type === 'confirm_delivery' && t.dataset.act === 'regenerate');
+      runResume(resume, showStepper);
     });
   });
 }
