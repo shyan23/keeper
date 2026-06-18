@@ -50,6 +50,7 @@ class DocumentOut(BaseModel):
     date: str | None = None
     type: str
     size: str
+    category: str | None = None
 
 
 class DeleteRecordsIn(BaseModel):

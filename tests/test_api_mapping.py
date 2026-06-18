@@ -124,3 +124,16 @@ def test_document_to_out_uses_report_date_and_name():
     out = document_to_out(row, "0.2 MB")
     assert out["name"] == "Haematology.pdf"
     assert out["date"] == "2021-04-30"
+
+
+def test_document_to_out_includes_category():
+    from app.api.mapping import document_to_out
+    row = {"id": 7, "original_name": "cbc.pdf", "type": "lab report",
+           "report_date": "2025-03-04", "date": None, "classification": "Hematology"}
+    out = document_to_out(row, "0.1 MB")
+    assert out["category"] == "Hematology"
+
+def test_document_to_out_category_none_when_missing():
+    from app.api.mapping import document_to_out
+    out = document_to_out({"id": 8, "type": "FILE"}, "—")
+    assert out["category"] is None

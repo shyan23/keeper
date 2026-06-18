@@ -103,4 +103,5 @@ def document_to_out(row: dict, size_str: str) -> dict:
         "date": date,
         "type": (row.get("type") or "FILE"),
         "size": size_str,
+        "category": row.get("classification"),
     }

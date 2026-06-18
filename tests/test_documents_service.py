@@ -37,3 +37,18 @@ def test_list_all_and_counts(db):
     dsvc.create_document(db, patient_id=p.id)
     assert dsvc.count_documents(db) >= 2
     assert dsvc.count_documents(db, patient_id=p.id) == 2
+
+
+def test_create_document_persists_classification():
+    from app.db import SessionLocal
+    from app.models import Patient
+    from app.services.documents import create_document
+    db = SessionLocal()
+    try:
+        p = Patient(name="Classify Person")
+        db.add(p); db.flush()
+        doc = create_document(db, patient_id=p.id, doc_type="lab report",
+                              classification="Hematology")
+        assert doc.classification == "Hematology"
+    finally:
+        db.close()

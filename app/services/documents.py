@@ -9,7 +9,8 @@ def create_document(db: Session, *, patient_id: int, doc_type: str | None = None
                     source_type: str | None = None, mime_type: str | None = None,
                     file_path: str | None = None, content_hash: str | None = None,
                     report_date: dt.date | None = None,
-                    original_name: str | None = None) -> Document:
+                    original_name: str | None = None,
+                    classification: str | None = None) -> Document:
     doc = Document(
         patient_id=patient_id,
         doc_type=doc_type,
@@ -19,6 +20,7 @@ def create_document(db: Session, *, patient_id: int, doc_type: str | None = None
         content_hash=content_hash,
         report_date=report_date,
         original_name=original_name,
+        classification=classification,
     )
     db.add(doc)
     db.commit()

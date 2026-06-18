@@ -89,6 +89,7 @@ def list_documents_timeline(db: Session, patient_id: int | None = None) -> list[
         {"id": d.id, "patient": pname, "type": d.doc_type, "status": d.status,
          "report_date": d.report_date.strftime("%Y-%m-%d") if d.report_date else None,
          "date": d.uploaded_at.strftime("%Y-%m-%d %H:%M") if d.uploaded_at else None,
-         "original_name": d.original_name, "file": d.file_path}
+         "original_name": d.original_name, "file": d.file_path,
+         "classification": d.classification}
         for d, pname in q.all()
     ]
