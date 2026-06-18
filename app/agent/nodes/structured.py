@@ -24,21 +24,49 @@ _NOISE = {"report", "reports", "test", "tests", "result", "results", "the", "of"
 _FUZZ = 0.8  # min SequenceMatcher ratio to call two words the same
 
 
+_SUGGEST = 0.6  # looser floor for "did you mean …" when nothing clears _FUZZ
+
+
+def _query_words(term: str) -> list[str]:
+    return [w for w in re.findall(r"[a-z0-9]+", term.lower()) if w not in _NOISE]
+
+
+def _hay_words(doc: Document) -> list[str]:
+    hay = " ".join(filter(None, [doc.classification, doc.doc_type, doc.original_name]))
+    return re.findall(r"[a-z0-9]+", hay.lower())
+
+
+def _word_score(w: str, hw: str) -> float:
+    """1.0 for equal or a ≥4-char containment (so 'cardio'⊂'cardiology'); else
+    the SequenceMatcher ratio. The length guard stops a 1-char token like the
+    'x' in 'X-Ray' from matching any word that happens to contain an 'x'."""
+    if w == hw:
+        return 1.0
+    if len(w) >= 4 and len(hw) >= 4 and (w in hw or hw in w):
+        return 1.0
+    return SequenceMatcher(None, w, hw).ratio()
+
+
+def _doc_score(term: str, doc: Document) -> float:
+    """Mean over query words of the best per-word score against any doc word
+    (category/type/filename). Tolerates spelling drift like
+    haemotology/haematology/hematology that exact SQL LIKE misses."""
+    words = _query_words(term)
+    if not words:
+        return 1.0
+    hw = _hay_words(doc)
+    if not hw:
+        return 0.0
+    return sum(max(_word_score(w, h) for h in hw) for w in words) / len(words)
+
+
 def _doc_matches(term: str, doc: Document) -> bool:
-    """Fuzzy: every meaningful word in `term` must appear — exactly, as a
-    substring, or close enough (Levenshtein-ish ratio) — in the doc's category,
-    type, or filename. Tolerates spelling drift like haemotology/haematology/
-    hematology that exact SQL LIKE misses."""
-    words = [w for w in re.findall(r"[a-z0-9]+", term.lower()) if w not in _NOISE]
+    """A confident match: every query word clears the fuzzy bar."""
+    words = _query_words(term)
     if not words:
         return True
-    hay = " ".join(filter(None, [doc.classification, doc.doc_type, doc.original_name]))
-    hay_words = re.findall(r"[a-z0-9]+", hay.lower())
-    for w in words:
-        if not any(w in hw or hw in w or SequenceMatcher(None, w, hw).ratio() >= _FUZZ
-                   for hw in hay_words):
-            return False
-    return True
+    hw = _hay_words(doc)
+    return all(any(_word_score(w, h) >= _FUZZ for h in hw) for w in words)
 
 
 _PROMPT = """From the user's request extract: patient_name, doc_type (or null), and
@@ -82,7 +110,15 @@ def query_db_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, An
         # ponytail: O(docs_per_patient) scan; fine at this scale, swap to pg_trgm if a
         # patient ever has thousands of docs.
         term = f.get("doc_type")
-        docs = [d for d in q.all() if not term or _doc_matches(term, d)]
+        all_docs = q.all()  # already date-ordered, patient-scoped (a handful of rows)
+        docs = [d for d in all_docs if not term or _doc_matches(term, d)]
+        # No confident match? Don't dead-end on "No matching": offer the closest
+        # doc above a looser floor as a "did you mean …" suggestion.
+        suggested = False
+        if term and not docs and all_docs:
+            best = max(all_docs, key=lambda d: _doc_score(term, d))
+            if _doc_score(term, best) >= _SUGGEST:
+                docs, suggested = [best], True
         docs = docs[: 1 if f.get("latest") else 10]
         rows = [{"document_id": d.id, "doc_type": d.doc_type,
                  "name": d.original_name or f"document-{d.id}",
@@ -95,7 +131,10 @@ def query_db_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, An
                 "messages": state["messages"] + [{"role": "assistant", "content": msg, "sources": []}]}
     # User-facing text references documents by type + date — never internal ids.
     # The clickable document chips come from `sources` (rendered by the UI).
-    label = "Latest document" if f.get("latest") else f"Found {len(rows)} document" + ("s" if len(rows) != 1 else "")
+    if suggested:
+        label = f"No exact match for “{term}” — did you mean"
+    else:
+        label = "Latest document" if f.get("latest") else f"Found {len(rows)} document" + ("s" if len(rows) != 1 else "")
     lines = [f"- {r['name']} · {r['doc_type'] or 'document'}{(' · ' + r['date']) if r['date'] else ''}"
              for r in rows]
     body = f"{label}:\n" + "\n".join(lines)
