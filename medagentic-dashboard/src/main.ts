@@ -2,8 +2,10 @@ import './index.css';
 import { ApiDocument, ApiPatient, ApiRecord, CitationSource } from './types';
 import {
   createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
-  resumeChat, streamChat, uploadFile,
+  resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries,
 } from './api';
+import { Chart, registerables } from 'chart.js';
+Chart.register(...registerables);
 import { groupDocsByYear } from './grouping';
 
 declare const lucide: any;
@@ -39,6 +41,8 @@ let docs: ApiDocument[] = [];
 let currentPatientId = '';
 let filterType = 'all';
 let sortOrder: 'desc' | 'asc' = 'desc';
+let trendMetric: string | null = null;
+let trendChart: Chart | null = null;
 let mobileTab: 'dashboard' | 'knowledge' = 'dashboard';
 let panelTab: 'chat' | 'docs' = 'chat';
 let chats: ChatMsg[] = [];
@@ -114,6 +118,8 @@ async function loadPatientData() {
 async function selectPatient(id: string) {
   currentPatientId = id;
   filterType = 'all';
+  trendMetric = null;
+  if (trendChart) { trendChart.destroy(); trendChart = null; }
   await loadPatientData();
   render();
 }
@@ -194,7 +200,7 @@ function renderDashboard() {
   if ($('header-patient-date')) $('header-patient-date')!.innerText = patient?.lastVisit ?? '—';
 
   if ($('filter-buttons')) {
-    const filters = ['all', 'disease', 'symptom', 'medicine', 'test_result'];
+    const filters = ['all', 'trends', 'disease', 'symptom', 'medicine', 'test_result'];
     $('filter-buttons')!.innerHTML = filters.map(type => `
       <button data-type="${type}" class="filter-btn px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all whitespace-nowrap ${
         filterType === type ? 'bg-white text-[#2E2C29] shadow-sm' : 'text-[#8C8982] hover:text-[#2E2C29]'
@@ -225,6 +231,11 @@ function renderDashboard() {
   // One clean column holding a single minimalist table — scales to many documents
   // without the card grid getting noisy.
   grid.className = 'grid grid-cols-1 gap-4 pb-12';
+  if (filterType === 'trends') {
+    setHtml(grid, trendsShellHtml());
+    bindTrendControls();
+    return;
+  }
   if (filterType === 'all') {
     setHtml(grid, docs.length
       ? documentsTableHtml(sortedDocs())
@@ -429,6 +440,81 @@ function testTableHtml(recs: ApiRecord[]): string {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+function trendsShellHtml(): string {
+  return `
+    <div class="bg-white rounded-2xl border border-[#E0DDD5] shadow-sm p-5">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="text-[10px] uppercase tracking-widest text-[#A6A298] font-bold">Metric</span>
+        <select id="trend-metric" class="text-[13px] font-semibold text-[#2E2C29] bg-[#FAF9F5] border border-[#E0DDD5] rounded-lg px-3 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7B6F]"></select>
+        <span id="trend-unit" class="text-[12px] text-[#8C8982]"></span>
+      </div>
+      <div class="relative h-[320px]"><canvas id="trend-canvas"></canvas></div>
+      <p id="trend-empty" class="hidden text-center py-16 text-[#A6A298] text-sm"></p>
+    </div>`;
+}
+
+async function bindTrendControls() {
+  if (!currentPatientId) return;
+  const sel = $('trend-metric') as HTMLSelectElement | null;
+  const empty = $('trend-empty');
+  const metrics = await getTrendMetrics(currentPatientId).catch(() => []);
+  if (!metrics.length) {
+    if (sel) sel.classList.add('hidden');
+    const canvas = $('trend-canvas'); if (canvas) canvas.classList.add('hidden');
+    if (empty) {
+      empty.classList.remove('hidden');
+      empty.textContent = 'No trend data yet — a test needs ≥2 numeric results to chart.';
+    }
+    return;
+  }
+  if (!trendMetric || !metrics.some(m => m.key === trendMetric)) {
+    trendMetric = metrics[0].key;
+  }
+  if (sel) {
+    setHtml(sel, metrics.map(m =>
+      `<option value="${esc(m.key)}" ${m.key === trendMetric ? 'selected' : ''}>${esc(m.label)}</option>`).join(''));
+    sel.addEventListener('change', () => { trendMetric = sel.value; renderTrendChart(); });
+  }
+  renderTrendChart();
+}
+
+async function renderTrendChart() {
+  if (!currentPatientId || !trendMetric) return;
+  const s = await getTrendSeries(currentPatientId, trendMetric).catch(() => null);
+  const unitEl = $('trend-unit');
+  if (unitEl) unitEl.textContent = s?.unit ? `(${s.unit})` : '';
+  const canvas = $('trend-canvas') as HTMLCanvasElement | null;
+  if (!canvas || !s) return;
+  if (trendChart) { trendChart.destroy(); trendChart = null; }
+
+  const labels = s.points.map(p => p.date);
+  const values = s.points.map(p => p.value);
+  const pointColors = s.points.map(p => (p.in_range ? '#5D7B6F' : '#C16D54'));
+  const datasets: any[] = [{
+    label: s.label, data: values, borderColor: '#5D7B6F',
+    backgroundColor: '#5D7B6F', pointBackgroundColor: pointColors,
+    pointRadius: 4, tension: 0.25, fill: false,
+  }];
+  // Shaded reference band: two flat hidden lines with fill between them.
+  if (s.ref_low !== null && s.ref_high !== null) {
+    datasets.push(
+      { label: 'ref high', data: labels.map(() => s.ref_high), borderWidth: 0,
+        pointRadius: 0, fill: '+1', backgroundColor: 'rgba(93,123,111,0.10)' },
+      { label: 'ref low', data: labels.map(() => s.ref_low), borderWidth: 0,
+        pointRadius: 0, fill: false },
+    );
+  }
+  trendChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: false } },
+    },
+  });
 }
 
 function bindCardButtons() {
