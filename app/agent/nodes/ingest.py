@@ -19,6 +19,7 @@ from app.services.documents import (
     create_document, find_by_content_hash, get_document, set_file_path,
 )
 from app.services.entities import persist_extraction
+from app.services.ner import merge_ner_entities
 from app.services.dates import date_from_text, parse_doc_date
 from app.services.extraction import extract_pages, extract_text, slice_pdf
 from app.services.patients import create_patient
@@ -91,12 +92,21 @@ def _extract_one(deps, text: str) -> dict[str, Any]:
     # Cache structured extraction by (model, text): re-ingest skips the slow LLM call.
     # v2: prompt now breaks narrative/imaging reports into labeled findings.
     key = make_key(f"extract:v2:{get_settings().ollama_model}", text)
-    return get_or_set(
+    llm = get_or_set(
         key,
         lambda: deps.chat.structured(
             _EXTRACT_PROMPT.format(text=text), ExtractionResult
         ).model_dump(),
     )
+    # Hybrid: union high-precision OpenMed NER entities into the LLM extraction.
+    # Best-effort — a NER failure must never break ingestion (graceful degradation).
+    ner = getattr(deps, "ner", None)
+    if ner is not None:
+        try:
+            return merge_ner_entities(llm, ner.extract(text))
+        except Exception as exc:  # noqa: BLE001 - NER is an optional enhancement
+            log.warning("NER extractor failed, using LLM-only extraction: %s", exc)
+    return llm
 
 
 def _report_name(title: str | None, ex: dict[str, Any]) -> str:

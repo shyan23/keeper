@@ -98,12 +98,19 @@ class VisionLLM(Protocol):
     def ocr_image(self, data: bytes, mime: str) -> str: ...
 
 
+class EntityExtractor(Protocol):
+    """Biomedical NER (OpenMed). Returns entities as
+    {type: disease|symptom|medication, name, score, source_span}."""
+    def extract(self, text: str) -> list[dict[str, Any]]: ...
+
+
 @dataclass
 class Deps:
     chat: ChatLLM
     vision: VisionLLM
     embedder: Embedder
     session_factory: Any  # callable() -> SQLAlchemy Session
+    ner: EntityExtractor | None = None  # optional NER pre-pass; LLM-only when absent
 
 
 # ---- Graph state ----
