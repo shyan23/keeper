@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from langgraph.types import Command
 from pydantic import BaseModel
 
@@ -79,6 +79,20 @@ def stream(body: StreamIn):
     graph = runtime.get_graph()
     return _sse_response(
         sse.run_graph_sse(graph, payload, body.thread_id, deps=runtime.get_deps()))
+
+
+@router.get("/report/{name}")
+def report_file(name: str):
+    # Serve a generated report by its stored uuid filename. Reject anything that
+    # isn't a bare <hex>.pdf name to block path traversal.
+    if "/" in name or "\\" in name or ".." in name or not name.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="bad report name")
+    base = (Path(storage.STORAGE_DIR) / "_reports").resolve()
+    path = (base / name).resolve()
+    if not str(path).startswith(str(base)) or not path.exists():
+        raise HTTPException(status_code=404, detail="report not found")
+    return FileResponse(str(path), media_type="application/pdf",
+                        filename="medical-report.pdf")
 
 
 @router.post("/resume")

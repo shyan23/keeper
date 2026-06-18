@@ -31,3 +31,11 @@ def save_bytes(patient_id: int, document_id: int, ext: str, data: bytes) -> str:
 
 def read_file(path: str) -> bytes:
     return Path(path).read_bytes()
+
+
+def save_report(data: bytes) -> str:
+    """Persist a generated report PDF under STORAGE_DIR/_reports/<uuid>.pdf."""
+    target = (Path(STORAGE_DIR) / "_reports" / f"{uuid.uuid4().hex}.pdf").resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return str(target)
