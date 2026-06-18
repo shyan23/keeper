@@ -101,6 +101,40 @@ def test_build_report_writes_pdf(db_session_factory, monkeypatch):
     assert fitz.open(out["report_path"]).page_count >= 1
 
 
+def test_build_report_chart_mandatory_outside_window(db_session_factory):
+    """A trend graph is mandatory: even when every point predates the requested
+    window, charts fall back to the metric's full history (>=2 points)."""
+    from app.services.patients import create_patient
+    from app.models import Document, DocumentEntity, MedicalTest, TestResult
+    import app.agent.nodes.report as rmod
+    sf = db_session_factory
+
+    def _add(s, pid, d, val):
+        doc = Document(patient_id=pid, doc_type="lab report", report_date=d,
+                       original_name="cbc.pdf")
+        s.add(doc); s.flush()
+        mt = MedicalTest(name="Haemoglobin"); s.add(mt); s.flush()
+        tr = TestResult(medical_test_id=mt.id, value=val, unit="g/dL",
+                        reference_range="12-16")
+        s.add(tr); s.flush()
+        s.add(DocumentEntity(document_id=doc.id, entity_type="test_result",
+                             entity_id=tr.id))
+
+    with sf() as s:
+        p = create_patient(s, name="Chart Patient", age=50)
+        _add(s, p.id, dt.date(2020, 10, 5), "13")
+        _add(s, p.id, dt.date(2021, 4, 30), "11")
+        s.commit(); pid = p.id
+    # Window is "last 3 years" of 2026 -> excludes the 2020/2021 points entirely.
+    state = {"messages": [],
+             "report_request": {"doc_types": []},
+             "report_plan": {"patient_id": pid,
+                             "date_from": "2023-06-19", "date_to": "2026-06-19",
+                             "timeframe_label": "2023-06-19 - 2026-06-19"}}
+    out = rmod.build_report_node(state, _cfg(sf=sf))
+    assert out["report_plan"]["chart_count"] >= 1
+
+
 def test_deliver_report_download_finishes(db_session_factory):
     import app.agent.nodes.report as rmod
     sf = db_session_factory

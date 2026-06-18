@@ -138,8 +138,12 @@ def build_report_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str
         charts: list[tuple[str, bytes]] = []
         for m in trends.list_metrics(s, pid):
             series = trends.metric_series(s, pid, m["key"])
-            series["points"] = [p for p in series["points"]
-                                if _in_window_point(p["date"], lo, hi)]
+            # Prefer points inside the requested window; but a trend graph is
+            # mandatory, so fall back to the metric's full dated history when the
+            # window leaves fewer than two points. list_metrics guarantees >=2.
+            windowed = [p for p in series["points"]
+                        if _in_window_point(p["date"], lo, hi)]
+            series["points"] = windowed if len(windowed) >= 2 else series["points"]
             if len(series["points"]) >= 2:
                 charts.append((f"{m['label']} over time",
                                charts_svc.render_metric_chart(series)))
