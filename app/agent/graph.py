@@ -15,6 +15,9 @@ from app.agent.nodes.rag import (
     confirm_low_confidence_node, correct_query_node, generate_answer_node,
     grade_node, require_patient_node, rerank_node, retrieve_node, transform_query_node,
 )
+from app.agent.nodes.report import (
+    build_report_node, confirm_report_node, deliver_report_node, plan_report_node,
+)
 
 
 def _route(state: AgentState) -> str:
@@ -48,6 +51,11 @@ def build_graph(checkpointer=None):
     # edit (HITL-verified correction of extracted data)
     g.add_node("plan_edit", plan_edit_node)
     g.add_node("confirm_edit", confirm_edit_node)
+    # pdf report
+    g.add_node("plan_report", plan_report_node)
+    g.add_node("confirm_report", confirm_report_node)
+    g.add_node("build_report", build_report_node)
+    g.add_node("deliver_report", deliver_report_node)
     # rag
     g.add_node("require_patient", require_patient_node)
     g.add_node("transform_query", transform_query_node)
@@ -64,6 +72,7 @@ def build_graph(checkpointer=None):
         "structured_query": "parse_filters",
         "rag_query": "require_patient",
         "edit": "plan_edit",
+        "generate_pdf": "plan_report",
     })
 
     g.add_edge("require_patient", "transform_query")
@@ -88,6 +97,20 @@ def build_graph(checkpointer=None):
                             lambda s: "confirm" if s.get("edit_target") else "end",
                             {"confirm": "confirm_edit", "end": END})
     g.add_edge("confirm_edit", END)
+
+    # pdf report chain — plan -> Gate A -> build -> Gate B -> (download | regenerate)
+    g.add_conditional_edges("plan_report",
+                            lambda s: "confirm" if s.get("report_plan") else "end",
+                            {"confirm": "confirm_report", "end": END})
+    g.add_conditional_edges("confirm_report",
+                            lambda s: s.get("report_decision") or "end",
+                            {"build": "build_report", "replan": "plan_report",
+                             "end": END})
+    g.add_edge("build_report", "deliver_report")
+    g.add_conditional_edges("deliver_report",
+                            lambda s: "rebuild" if s.get("report_decision") == "rebuild"
+                            else "end",
+                            {"rebuild": "build_report", "end": END})
 
     # rag chain (HyDE -> retrieve -> rerank -> grade -> [CRAG correct loop] -> HITL -> answer)
     g.add_edge("transform_query", "retrieve")

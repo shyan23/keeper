@@ -34,3 +34,9 @@ def test_router_defaults_to_rag_on_garbage():
     state = {"messages": [{"role": "user", "content": "what about her sugar?"}]}
     out = classify_intent(state, _cfg(_FakeChat("nonsense")))
     assert out["intent"] == "rag_query"
+
+
+def test_router_generate_pdf():
+    state = {"messages": [{"role": "user", "content": "make a pdf of Jane's lipid results"}]}
+    out = classify_intent(state, _cfg(_FakeChat("generate_pdf")))
+    assert out["intent"] == "generate_pdf"

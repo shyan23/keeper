@@ -136,6 +136,12 @@ class AgentState(TypedDict, total=False):
     # query
     query_filters: dict[str, Any] | None
     edit_target: dict[str, Any] | None    # proposed correction awaiting HITL verify
+    # pdf report
+    report_request: dict[str, Any] | None
+    report_plan: dict[str, Any] | None
+    report_decision: str | None
+    report_path: str | None
+    report_url: str | None
     retrieved: list[dict[str, Any]]
     answer: str | None
     citations: list[dict[str, Any]]

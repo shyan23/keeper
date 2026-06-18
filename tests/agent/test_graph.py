@@ -107,3 +107,10 @@ def test_rag_query_runs_without_pause(db_session_factory):
              "patient_id": pid}
     out = graph.invoke(state, cfg)
     assert out["answer"]
+
+
+def test_graph_has_report_nodes():
+    g = build_graph()
+    nodes = set(g.get_graph().nodes)
+    for n in ["plan_report", "confirm_report", "build_report", "deliver_report"]:
+        assert n in nodes

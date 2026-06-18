@@ -2,7 +2,8 @@ from app.api import runtime
 
 
 def test_node_labels_cover_key_nodes():
-    for node in ["router", "extract_text", "generate_answer"]:
+    for node in ["router", "extract_text", "generate_answer",
+                 "plan_report", "build_report", "deliver_report"]:
         assert node in runtime.NODE_LABELS
 
 

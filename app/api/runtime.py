@@ -21,6 +21,10 @@ NODE_LABELS: dict[str, str] = {
     "grade": "⚖️ Checking answer confidence…",
     "correct_query": "🔁 Refining the search…",
     "generate_answer": "🧠 Composing the answer…",
+    "plan_report": "🧾 Planning your report…",
+    "confirm_report": "✅ Awaiting your approval…",
+    "build_report": "📄 Building the PDF…",
+    "deliver_report": "📦 Finalizing your report…",
 }
 
 
