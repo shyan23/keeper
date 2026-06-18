@@ -35,6 +35,28 @@ def test_delete_documents_removes_doc_entities_chunks_testresults():
         db.close()
 
 
+def test_delete_clears_dedup_hash_on_same_file_siblings():
+    # Multi-report PDF -> several docs sharing one content_hash. Deleting one
+    # must clear the hash on the survivors so the file can be re-uploaded.
+    db = SessionLocal()
+    try:
+        p = Patient(name="Bundle Person")
+        db.add(p); db.flush()
+        a = Document(patient_id=p.id, doc_type="lab", content_hash="abc123")
+        b = Document(patient_id=p.id, doc_type="lab", content_hash="abc123")
+        db.add_all([a, b]); db.commit()
+        a_id, b_id = a.id, b.id
+
+        n = delete_documents(db, p.id, [str(a_id)])
+        assert n == 1
+        assert db.get(Document, a_id) is None
+        survivor = db.get(Document, b_id)
+        assert survivor is not None
+        assert survivor.content_hash is None  # dedup freed -> re-upload accepted
+    finally:
+        db.close()
+
+
 def test_delete_documents_skips_foreign_patient():
     db = SessionLocal()
     try:

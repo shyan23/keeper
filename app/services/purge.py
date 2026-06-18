@@ -23,6 +23,15 @@ def delete_documents(db: Session, patient_id: int, document_ids: list[str]) -> i
     docs = (db.query(Document)
             .filter(Document.id.in_(ids), Document.patient_id == patient_id)
             .all())
+    # A multi-report PDF splits into several documents that share one file hash.
+    # Deleting one would otherwise leave its siblings blocking re-upload of the
+    # file, so clear the dedup hash on every surviving doc from the same file.
+    hashes = {d.content_hash for d in docs if d.content_hash}
+    if hashes:
+        (db.query(Document)
+         .filter(Document.content_hash.in_(hashes),
+                 Document.id.notin_(ids))
+         .update({Document.content_hash: None}, synchronize_session=False))
     deleted = 0
     for doc in docs:
         # TestResult has no FK to Document — delete via the test_result links first.
