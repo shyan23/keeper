@@ -873,7 +873,9 @@ function bindInterruptButtons() {
         resume = { proceed: t.dataset.act === 'proceed' };
       }
       chats.splice(idx, 1); // remove the card (after reading its inputs)
-      runResume(resume);
+      // Confirming an ingest kicks off persist+index work — show the stepper
+      // (spinner per step) instead of a bare "Thinking…" line.
+      runResume(resume, payload.type === 'confirm_ingest' && t.dataset.act === 'confirm');
     });
   });
 }
@@ -992,8 +994,9 @@ async function handleUpload(file: File) {
   }
 }
 
-async function runResume(resume: any) {
+async function runResume(resume: any, stepper = false) {
   const agent = liveAgent();
+  if (stepper) { agent.stepper = true; agent.step = 3; } // Review → Index spinner while saving
   render();
   await resumeChat({ thread_id: activeThread, resume }, streamHandlers(agent));
 }
