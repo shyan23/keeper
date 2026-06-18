@@ -74,6 +74,7 @@ def list_test_results(db: Session, patient_id: int | None = None) -> list[dict]:
          "patient": r[4], "patient_id": r[5], "doc_type": r[6],
          "date": (r[10].strftime("%Y-%m-%d") if r[10]
                   else (r[7].strftime("%Y-%m-%d") if r[7] else None)),
+         "report_date": r[10].strftime("%Y-%m-%d") if r[10] else None,
          "source": r[8], "document_id": r[9]}
         for r in q.all()
     ]
