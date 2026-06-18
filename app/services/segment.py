@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 class ReportSpec(BaseModel):
     title: str = "Medical Report"      # human name, e.g. "Haematological Report", "Chest X-Ray", "Prescription"
     doc_type: str = "document"         # category: lab report | imaging | prescription | discharge | document
+    category: str | None = None        # printed department/panel, e.g. Hematology, Biochemistry, X-Ray, Urine
     pages: list[int] = Field(default_factory=list)  # 0-based page indices in this report
     date: str | None = None            # report/collection date if visible
 
@@ -32,6 +33,7 @@ an X-ray, a prescription) — each typically has its own header, date and result
 Identify each distinct report. For each, return:
 - title: a short human name (e.g. "Haematological Report", "Chest X-Ray", "Lipid Profile", "Prescription")
 - doc_type: one of lab report, imaging, prescription, discharge, document
+- category: the report's printed department/section/panel name if shown (e.g. "Hematology", "Biochemistry", "X-Ray", "Ultrasound", "Urine"), else null
 - pages: the 0-based page numbers that belong to it (a report may span pages)
 - date: the report/collection/sample date if visible, else null
 
@@ -76,6 +78,7 @@ def _regex_segments(pages: list[str]) -> list[dict]:
         title = detect_title(page)
         if title or not segs:
             segs.append({"title": title, "doc_type": doc_type_for(title),
+                         "category": None,
                          "date": None, "text": page, "pages": [i]})
         else:
             segs[-1]["text"] += "\n\n" + page
@@ -89,8 +92,8 @@ def split_reports(chat, pages: list[str]) -> list[dict]:
     or empty result, fall back to regex header detection."""
     if len(pages) <= 1:
         text = pages[0] if pages else ""
-        return [{"title": None, "doc_type": "document", "date": None,
-                 "text": text, "pages": [0]}]
+        return [{"title": None, "doc_type": "document", "category": None,
+                 "date": None, "text": text, "pages": [0]}]
 
     marked = "\n\n".join(f"[[PAGE {i}]]\n{p}" for i, p in enumerate(pages))
     reports: list[ReportSpec] = []
@@ -127,6 +130,7 @@ def split_reports(chat, pages: list[str]) -> list[dict]:
         out.append({
             "title": (r.title or "").strip() or None,
             "doc_type": (r.doc_type or "document").strip().lower(),
+            "category": (r.category or "").strip() or None,
             "date": r.date,
             "text": "\n\n".join(pages[i] for i in idxs),
             "pages": idxs,

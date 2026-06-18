@@ -139,6 +139,7 @@ def segment_extract_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
         segments.append({
             "name": title or _report_name(None, ex),
             "doc_type": doc_type or "document",
+            "category": seg.get("category"),
             "report_date": rdate.isoformat() if rdate else None,
             "extracted": ex,
             "text": text,
@@ -281,6 +282,7 @@ def persist_reports_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
                      or date_from_text(seg.get("text")))
             doc = create_document(
                 s, patient_id=pid, doc_type=seg.get("doc_type") or ex.get("doc_type"),
+                classification=seg.get("category"),
                 source_type=state.get("source_type"), mime_type=state.get("mime_type"),
                 content_hash=chash, report_date=rdate,
                 original_name=seg.get("name") or state.get("original_name"),
