@@ -55,3 +55,25 @@ class DocumentOut(BaseModel):
 
 class DeleteRecordsIn(BaseModel):
     document_ids: list[str]
+
+
+class MetricOut(BaseModel):
+    key: str
+    label: str
+    unit: str = ""
+    n: int
+
+
+class SeriesPointOut(BaseModel):
+    date: str
+    value: float
+    in_range: bool
+
+
+class SeriesOut(BaseModel):
+    key: str
+    label: str
+    unit: str = ""
+    ref_low: float | None = None
+    ref_high: float | None = None
+    points: list[SeriesPointOut]

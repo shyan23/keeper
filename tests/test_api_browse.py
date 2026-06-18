@@ -105,3 +105,37 @@ def test_get_document_file_serves_existing(tmp_path):
     r = client.get(f"/api/documents/{did}/file")
     assert r.status_code == 200
     assert r.content == b"%PDF-1.4 fake"
+
+
+def test_trends_endpoints():
+    import datetime as dt
+    from app.db import SessionLocal
+    from app.models import Document, DocumentEntity, MedicalTest, Patient, TestResult
+
+    pid = int(client.post("/api/patients", json={"name": "Trend Api"}).json()["id"])
+    db = SessionLocal()
+    try:
+        for d, val in ((dt.date(2024, 1, 1), "14"), (dt.date(2025, 1, 1), "11")):
+            doc = Document(patient_id=pid, doc_type="lab report", report_date=d)
+            db.add(doc); db.flush()
+            mt = MedicalTest(name="Hemoglobin"); db.add(mt); db.flush()
+            tr = TestResult(medical_test_id=mt.id, value=val, unit="g/dL",
+                            reference_range="12-16")
+            db.add(tr); db.flush()
+            db.add(DocumentEntity(document_id=doc.id, entity_type="test_result",
+                                  entity_id=tr.id))
+        db.commit()
+    finally:
+        db.close()
+
+    metrics = client.get(f"/api/patients/{pid}/trends").json()
+    assert any(m["key"] == "hemoglobin" and m["n"] == 2 for m in metrics)
+
+    series = client.get(f"/api/patients/{pid}/trends/hemoglobin").json()
+    assert series["ref_low"] == 12.0
+    assert len(series["points"]) == 2
+    assert series["points"][0]["date"] == "2024-01-01"
+
+
+def test_trends_unknown_patient_404():
+    assert client.get("/api/patients/999999/trends").status_code == 404

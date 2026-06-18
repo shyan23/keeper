@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.api import mapping
 from app.api.schemas import (
-    DeleteRecordsIn, DocumentOut, HealthOut, PatientIn, PatientOut, RecordOut,
+    DeleteRecordsIn, DocumentOut, HealthOut, MetricOut, PatientIn, PatientOut,
+    RecordOut, SeriesOut,
 )
 from app.db import SessionLocal
 from app.services import browse as bsvc
@@ -16,6 +17,7 @@ from app.services import documents as dsvc
 from app.services import health as hsvc
 from app.services import patients as psvc
 from app.services import purge as pgsvc
+from app.services import trends as tsvc
 
 router = APIRouter(prefix="/api")
 
@@ -67,6 +69,28 @@ def patient_records(patient_id: int) -> list[dict]:
         meds = bsvc.list_entity_links(db, "medication", patient_id=patient_id)
         tests = bsvc.list_test_results(db, patient_id=patient_id)
         return mapping.merge_records(str(patient_id), diseases, symptoms, meds, tests)
+    finally:
+        db.close()
+
+
+@router.get("/patients/{patient_id}/trends", response_model=list[MetricOut])
+def patient_trends(patient_id: int) -> list[dict]:
+    db = SessionLocal()
+    try:
+        if psvc.get_patient(db, patient_id) is None:
+            raise HTTPException(status_code=404, detail="patient not found")
+        return tsvc.list_metrics(db, patient_id)
+    finally:
+        db.close()
+
+
+@router.get("/patients/{patient_id}/trends/{key}", response_model=SeriesOut)
+def patient_trend_series(patient_id: int, key: str) -> dict:
+    db = SessionLocal()
+    try:
+        if psvc.get_patient(db, patient_id) is None:
+            raise HTTPException(status_code=404, detail="patient not found")
+        return tsvc.metric_series(db, patient_id, key)
     finally:
         db.close()
 
