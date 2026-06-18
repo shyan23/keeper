@@ -79,6 +79,29 @@ export interface ApiDocument {
   date: string | null;
   type: string;
   size: string;
+  category: string | null;
+}
+
+export interface TrendMetric {
+  key: string;
+  label: string;
+  unit: string;
+  n: number;
+}
+
+export interface TrendPoint {
+  date: string;
+  value: number;
+  in_range: boolean;
+}
+
+export interface TrendSeries {
+  key: string;
+  label: string;
+  unit: string;
+  ref_low: number | null;
+  ref_high: number | null;
+  points: TrendPoint[];
 }
 
 export interface CitationSource {

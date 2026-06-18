@@ -1,5 +1,5 @@
 import {
-  ApiDocument, ApiPatient, ApiRecord, Health, SseHandlers,
+  ApiDocument, ApiPatient, ApiRecord, Health, SseHandlers, TrendMetric, TrendSeries,
 } from './types';
 
 const API = (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
@@ -25,6 +25,10 @@ export const getRecords = (patientId: string) =>
   json<ApiRecord[]>(`/api/patients/${patientId}/records`);
 export const getDocuments = (patientId: string) =>
   json<ApiDocument[]>(`/api/patients/${patientId}/documents`);
+export const getTrendMetrics = (patientId: string) =>
+  json<TrendMetric[]>(`/api/patients/${patientId}/trends`);
+export const getTrendSeries = (patientId: string, key: string) =>
+  json<TrendSeries>(`/api/patients/${patientId}/trends/${encodeURIComponent(key)}`);
 export const deleteRecords = (patientId: string, documentIds: string[]) =>
   json<{ deleted: number }>(`/api/patients/${patientId}/records/delete`, {
     method: 'POST', body: JSON.stringify({ document_ids: documentIds }),
