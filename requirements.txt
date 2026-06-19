@@ -19,3 +19,4 @@ pytesseract>=0.3.13
 pillow>=10.0
 matplotlib>=3.8
 pyyaml==6.0.3
+mcp>=1.28

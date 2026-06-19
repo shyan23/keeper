@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "nomic-embed-text"
     # Small vision model: llama3.2-vision needs ~11 GiB RAM; moondream fits in ~2.
     ollama_vision_model: str = "moondream"
+    # MedGemma 4B multimodal (Ollama-served) for imaging/radiology narrative OCR.
+    # Off by default: Gemma/HAI-DEF terms are field-restricted (not OSI/Apache), and
+    # a 4B model is slow per page. When enabled it joins the FallbackVision chain.
+    medgemma_enabled: bool = False
+    medgemma_model: str = "alibayram/medgemma"
     rag_top_k: int = 5
     rag_confidence_threshold: float = 0.5
     gemini_api_key: str = "changeme"

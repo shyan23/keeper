@@ -12,6 +12,21 @@ class _FakeEmbedder:
         return [[0.2] * 768 for _ in texts]
 
 
+def test_hybrid_keyword_match_ranks_first(db):
+    # Constant fake embeddings => vector ranking is a tie; the FTS/BM25 half must
+    # break it toward the chunk that lexically contains the query term. Proves the
+    # keyword leg of hybrid retrieval + RRF fusion, not just vector recall.
+    p = create_patient(db, name="Hybrid Owner")
+    d = create_document(db, patient_id=p.id, doc_type="lab_report")
+    emb = _FakeEmbedder()
+    chunk_and_embed(db, document_id=d.id, patient_id=p.id,
+                    text="creatinine level 1.1 mg/dL", header="H", embedder=emb, size=60)
+    chunk_and_embed(db, document_id=d.id, patient_id=p.id,
+                    text="hemoglobin 13 g/dL platelets normal", header="H", embedder=emb, size=60)
+    hits = search_chunks(db, patient_id=p.id, query="creatinine", embedder=emb, k=2)
+    assert "creatinine" in hits[0]["text"], hits
+
+
 def test_search_is_patient_scoped(db):
     pa = create_patient(db, name="Alice Scope")
     pb = create_patient(db, name="Bob Scope")

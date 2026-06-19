@@ -167,14 +167,14 @@ Score = I×C×E. Reach ≈ constant (personal/self-host), so omitted.
 | 6 | At-rest encryption + LICENSE + no-egress doc (S10/12) | 9 | 9 | 5 | **405** | Next |
 | 7 | Self-hosted tracing/cost (Langfuse OSS) (S9) | 7 | 8 | 6 | **336** | Next |
 | 8 | Durable checkpointer (Postgres saver) (S4) | 8 | 8 | 7 | **448** | Next |
-| 9 | MCP server wrapper (S6-ish, agentic) | 8 | 7 | 6 | **336** | Next |
+| 9 | MCP server wrapper (S6-ish, agentic) | 8 | 7 | 6 | **336** | ✅ Done (2026-06-20) |
 | 10 | Trend / timeline view | 9 | 8 | 7 | **504** | Next |
-| 11 | Hybrid retrieval (BM25 + vector) (S5) | 7 | 7 | 6 | **294** | Later |
+| 11 | Hybrid retrieval (BM25 + vector) (S5) | 7 | 7 | 6 | **294** | ✅ Done (2026-06-20) |
 | 12 | Encrypted backup + restore | 9 | 9 | 7 | **567** | Next |
 | 13 | Multi-agent supervisor split (S6) | 6 | 6 | 4 | **144** | Later |
 | 14 | Mobile capture PWA | 9 | 7 | 5 | **315** | Later |
 | 15 | OpenMed NER hybrid entity extraction (S3) | 9 | 8 | 6 | **432** | Now |
-| 16 | MedGemma 4B vision for imaging studies (S3) | 8 | 7 | 5 | **280** | Next |
+| 16 | MedGemma 4B vision for imaging studies (S3) | 8 | 7 | 5 | **280** | ✅ Done (2026-06-20) |
 
 > Scores are deliberate estimates to force ranking, not measurements.
 
@@ -232,14 +232,24 @@ Together: better answers (1+2) you can *prove* (3), at no cost. That's the 10X.
 ### Horizon 3 — Advanced agentic + adoption
 > Outcome: *interoperable, capture-anywhere, easy to adopt.*
 
-- **MCP server wrapper** — ingest/query/records as MCP tools for any agent client.
-- **One-command demo + synthetic de-identified dataset** + recorded demo (Stage 12).
-- **MedGemma 4B vision** — `MedGemmaVision` provider in the `VisionLLM` chain for
+- [x] **MCP server wrapper** — records/query as MCP tools for any agent client.
+  *(Done 2026-06-20: `app/mcp/server.py` — `list_patients`/`get_records`/`search_records`
+  over FastMCP/stdio, `make mcp`. Ingest deferred: HITL patient gate has no headless
+  contract yet.)*
+- [ ] **One-command demo + synthetic de-identified dataset** + recorded demo (Stage 12).
+  *(Not started — blocker is the synthetic dataset, not the wiring: `Med_documents/` are
+  real reports and can't ship.)*
+- [x] **MedGemma 4B vision** — `MedGemmaVision` provider in the `VisionLLM` chain for
   radiology/imaging understanding (X-ray/USG/CT narrative); Tesseract stays the default
   OSS fallback (license caveat in §3d).
-- **Hybrid retrieval** (BM25 + vector); **mobile capture PWA**.
-- (Optional) **Multi-agent supervisor** split — only if a real workflow needs it; don't
-  add orchestration for its own sake.
+  *(Done 2026-06-20: `MedGemmaVision` (Ollama-served) in `providers.py`, config-gated
+  `medgemma_enabled` (default off, license/speed), wired into `FallbackVision` behind
+  Tesseract. Doc-type routing is the upgrade path.)*
+- [x] **Hybrid retrieval** (BM25 + vector). *(Done 2026-06-20: `search_chunks` fuses
+  pgvector cosine + Postgres FTS via RRF; GIN index `ix_chunk_text_fts` in models.py +
+  migration 0007.)* — [ ] **mobile capture PWA** *(not started)*.
+- [ ] (Optional) **Multi-agent supervisor** split — only if a real workflow needs it; don't
+  add orchestration for its own sake. *(Deferred — ICE 144, no workflow needs it.)*
 
 ---
 
