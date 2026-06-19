@@ -2,38 +2,58 @@ from __future__ import annotations
 
 from typing import Any
 
-_VALID = {"ingest", "structured_query", "rag_query", "edit", "generate_pdf"}
+from app.agent.state import IntentDecision
 
-_PROMPT = """Classify the user's request into exactly one label:
-- generate_pdf: asking to MAKE/CREATE/GENERATE a PDF/report/document OUT OF records (e.g. "make a pdf of all lipid results of patient X for the last 3 years", "make a pdf from all reports of Bob").
-- edit: asking to CHANGE/CORRECT/FIX/UPDATE/SET an extracted value, name, or date (e.g. "set hemoglobin to 1.2", "correct the report date to 5 Oct 2023", "rename the diagnosis to anemia").
-- structured_query: asking for a specific document/record by patient, type, or recency (e.g. "latest report of Jane", "show prescriptions for Bob").
-- rag_query: a question about the CONTENT of documents (e.g. "what did the doctor say about her blood pressure?").
-Respond with ONLY the label.
+CLARIFY_BELOW = 0.80
+CONFIRM_BELOW = 0.90
 
-User: {text}
-Label:"""
+_FALLBACK_QUESTION = (
+    "I'm not sure what you'd like me to do — should I look something up, "
+    "change a value, or make a report?")
+
+_PROMPT = """You are routing a medical-records assistant. Classify the user's
+latest request into exactly one intent, given the recent conversation.
+
+Intents:
+- generate_pdf: MAKE/CREATE/GENERATE a PDF/report OUT OF stored records.
+- edit: CHANGE/CORRECT/FIX/UPDATE/SET an extracted value, name, or date.
+- structured_query: ask for a specific document/record by patient, type, or recency.
+- rag_query: a question about the CONTENT of documents.
+- ingest: read/store a newly provided document.
+
+Return JSON: {{"intent": <one of the above>, "confidence": <0..1>, "question": <a
+short clarifying question if and only if you are unsure, else null>}}.
+Set confidence below 0.8 only when the request is genuinely ambiguous.
+
+Recent conversation:
+{conversation}
+
+JSON:"""
 
 
-def _last_user_text(state: dict[str, Any]) -> str:
-    for m in reversed(state.get("messages", [])):
-        if m.get("role") == "user":
-            return m.get("content", "")
-    return ""
+def _recent_conversation(state: dict[str, Any], n: int = 6) -> str:
+    msgs = state.get("messages", [])[-n:]
+    return "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in msgs)
+
+
+def _say(state: dict[str, Any], msg: str, **extra: Any) -> dict[str, Any]:
+    return {"answer": msg,
+            "messages": state["messages"] + [{"role": "assistant", "content": msg}],
+            **extra}
 
 
 def classify_intent(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     # A pending file upload always means ingest.
     if state.get("file_path"):
-        return {"intent": "ingest"}
+        return {"intent": "ingest", "route_gate": "go"}
+
     deps = config["configurable"]["deps"]
-    label = deps.chat.complete(_PROMPT.format(text=_last_user_text(state))).strip().lower()
-    if "generate_pdf" in label or "pdf" in label:
-        return {"intent": "generate_pdf"}
-    if "edit" in label:
-        return {"intent": "edit"}
-    if "structured" in label:
-        return {"intent": "structured_query"}
-    if "ingest" in label:
-        return {"intent": "ingest"}
-    return {"intent": "rag_query"}  # safe default
+    decision: IntentDecision = deps.chat.structured(
+        _PROMPT.format(conversation=_recent_conversation(state)), IntentDecision)
+
+    if decision.confidence < CLARIFY_BELOW:
+        question = decision.question or _FALLBACK_QUESTION
+        return _say(state, question, intent="clarify", route_gate="clarify")
+
+    gate = "confirm" if decision.confidence < CONFIRM_BELOW else "go"
+    return {"intent": decision.intent, "route_gate": gate}

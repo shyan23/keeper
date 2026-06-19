@@ -1,15 +1,16 @@
 from app.agent.router import classify_intent
+from app.agent.state import IntentDecision
 
 
 class _FakeChat:
-    def __init__(self, label):
-        self._label = label
+    def __init__(self, decision: IntentDecision):
+        self._decision = decision
 
     def complete(self, prompt):
-        return self._label
+        return ""
 
     def structured(self, prompt, schema):
-        raise NotImplementedError
+        return self._decision
 
 
 def _cfg(chat):
@@ -20,23 +21,40 @@ def _cfg(chat):
 
 def test_router_ingest_when_file_present():
     state = {"messages": [{"role": "user", "content": "read this"}], "file_path": "/x.png"}
-    out = classify_intent(state, _cfg(_FakeChat("rag_query")))
-    assert out["intent"] == "ingest"  # file present forces ingest
+    out = classify_intent(state, _cfg(_FakeChat(IntentDecision(intent="rag_query"))))
+    assert out["intent"] == "ingest"
+    assert out["route_gate"] == "go"
 
 
-def test_router_uses_llm_label_for_text():
+def test_router_high_confidence_goes():
     state = {"messages": [{"role": "user", "content": "latest report of Jane"}]}
-    out = classify_intent(state, _cfg(_FakeChat("structured_query")))
+    out = classify_intent(state, _cfg(_FakeChat(
+        IntentDecision(intent="structured_query", confidence=0.95))))
+    assert out["intent"] == "structured_query"
+    assert out["route_gate"] == "go"
+
+
+def test_router_mid_confidence_confirms():
+    state = {"messages": [{"role": "user", "content": "show jane"}]}
+    out = classify_intent(state, _cfg(_FakeChat(
+        IntentDecision(intent="structured_query", confidence=0.85))))
+    assert out["route_gate"] == "confirm"
     assert out["intent"] == "structured_query"
 
 
-def test_router_defaults_to_rag_on_garbage():
-    state = {"messages": [{"role": "user", "content": "what about her sugar?"}]}
-    out = classify_intent(state, _cfg(_FakeChat("nonsense")))
-    assert out["intent"] == "rag_query"
+def test_router_low_confidence_clarifies():
+    state = {"messages": [{"role": "user", "content": "do the thing"}]}
+    out = classify_intent(state, _cfg(_FakeChat(
+        IntentDecision(intent="rag_query", confidence=0.3, question="What would you like?"))))
+    assert out["route_gate"] == "clarify"
+    assert out["intent"] == "clarify"
+    assert out["messages"][-1]["role"] == "assistant"
+    assert out["messages"][-1]["content"] == "What would you like?"
 
 
-def test_router_generate_pdf():
-    state = {"messages": [{"role": "user", "content": "make a pdf of Jane's lipid results"}]}
-    out = classify_intent(state, _cfg(_FakeChat("generate_pdf")))
-    assert out["intent"] == "generate_pdf"
+def test_router_low_confidence_synthesizes_question_when_missing():
+    state = {"messages": [{"role": "user", "content": "??"}]}
+    out = classify_intent(state, _cfg(_FakeChat(
+        IntentDecision(intent="rag_query", confidence=0.1, question=None))))
+    assert out["route_gate"] == "clarify"
+    assert out["messages"][-1]["content"]  # non-empty fallback question
