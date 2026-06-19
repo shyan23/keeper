@@ -40,10 +40,10 @@ class GroqChat:
                                               max_tokens=4096)
         return self._structured_inner
 
-    def complete(self, prompt: str) -> str:
-        return self._chat_client().invoke(prompt).content
+    def complete(self, prompt: str, config=None) -> str:
+        return self._chat_client().invoke(prompt, config=config).content
 
-    def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
+    def structured(self, prompt: str, schema: type[BaseModel], config=None) -> BaseModel:
         from app.agent.schema import to_strict_schema
         from app.agent.structured import validate_and_retry
 
@@ -59,7 +59,7 @@ class GroqChat:
                   "json_schema": {"name": schema.__name__, "strict": True,
                                   "schema": to_strict_schema(
                                       schema, drop={"source_span", "confidence"})}}
-            raw = client.bind(response_format=rf).invoke(prompt).content
+            raw = client.bind(response_format=rf).invoke(prompt, config=config).content
             return schema.model_validate_json(raw)
 
         # Best-effort json_object (e.g. llama-3.3) + self-correcting retry.
@@ -69,7 +69,7 @@ class GroqChat:
         def invoke_raw(extra: str) -> str:
             return client.bind(
                 response_format={"type": "json_object"}
-            ).invoke(base + extra).content
+            ).invoke(base + extra, config=config).content
 
         return validate_and_retry(invoke_raw, schema)
 

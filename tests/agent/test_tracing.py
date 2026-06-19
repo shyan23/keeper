@@ -47,3 +47,42 @@ def test_cfg_attaches_callbacks_when_enabled(monkeypatch):
     monkeypatch.setattr(runtime, "get_handler", lambda session_id=None: sentinel)
     c = runtime.cfg("thread-1", deps=object())
     assert c["callbacks"] == [sentinel]
+
+
+from app.agent.llm import GroqChat
+from app.agent.providers import FallbackChat
+
+
+class _RecordingInner:
+    """Stands in for a langchain chat client; records the config it was invoked with."""
+    def __init__(self):
+        self.seen_config = "UNSET"
+
+    def invoke(self, prompt, config=None):
+        self.seen_config = config
+        class _R:
+            content = "ok"
+        return _R()
+
+
+def test_groqchat_complete_forwards_config():
+    inner = _RecordingInner()
+    chat = GroqChat(inner=inner)
+    chat.complete("hi", config={"callbacks": ["h"]})
+    assert inner.seen_config == {"callbacks": ["h"]}
+
+
+class _RecordingProvider:
+    def __init__(self):
+        self.seen_config = "UNSET"
+
+    def complete(self, prompt, config=None):
+        self.seen_config = config
+        return "ok"
+
+
+def test_fallbackchat_complete_forwards_config():
+    p = _RecordingProvider()
+    chat = FallbackChat([p])
+    chat.complete("hi", config={"callbacks": ["h"]})
+    assert p.seen_config == {"callbacks": ["h"]}

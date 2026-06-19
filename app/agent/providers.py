@@ -25,11 +25,11 @@ class GeminiChat:
                                            google_api_key=s.gemini_api_key, temperature=0)
         self._inner = inner
 
-    def complete(self, prompt: str) -> str:
-        return self._inner.invoke(prompt).content
+    def complete(self, prompt: str, config=None) -> str:
+        return self._inner.invoke(prompt, config=config).content
 
-    def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
-        return self._inner.with_structured_output(schema).invoke(prompt)
+    def structured(self, prompt: str, schema: type[BaseModel], config=None) -> BaseModel:
+        return self._inner.with_structured_output(schema).invoke(prompt, config=config)
 
 
 class GeminiVision:
@@ -75,11 +75,11 @@ class OllamaChat:
             inner = ChatOllama(model=s.ollama_model, base_url=s.ollama_host, temperature=0)
         self._inner = inner
 
-    def complete(self, prompt: str) -> str:
-        return self._inner.invoke(prompt).content
+    def complete(self, prompt: str, config=None) -> str:
+        return self._inner.invoke(prompt, config=config).content
 
-    def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
-        return self._inner.with_structured_output(schema).invoke(prompt)
+    def structured(self, prompt: str, schema: type[BaseModel], config=None) -> BaseModel:
+        return self._inner.with_structured_output(schema).invoke(prompt, config=config)
 
 
 class TesseractVision:
@@ -221,21 +221,21 @@ class FallbackChat:
     def __init__(self, providers: list):
         self._providers = [p for p in providers if p is not None]
 
-    def complete(self, prompt: str) -> str:
+    def complete(self, prompt: str, config=None) -> str:
         last = None
         for p in self._providers:
             try:
-                return p.complete(prompt)
+                return p.complete(prompt, config=config)
             except Exception as e:  # noqa: BLE001 - fallback is the whole point
                 log.warning("chat provider %s failed: %s", type(p).__name__, e)
                 last = e
         raise RuntimeError(f"all chat providers failed: {last}")
 
-    def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
+    def structured(self, prompt: str, schema: type[BaseModel], config=None) -> BaseModel:
         last = None
         for p in self._providers:
             try:
-                return p.structured(prompt, schema)
+                return p.structured(prompt, schema, config=config)
             except Exception as e:  # noqa: BLE001
                 log.warning("chat(structured) provider %s failed: %s", type(p).__name__, e)
                 last = e

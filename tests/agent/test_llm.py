@@ -18,7 +18,7 @@ class _FakeLC:
         self.payload = payload
         self.bound_format = None
 
-    def invoke(self, prompt):
+    def invoke(self, prompt, config=None):
         return _R("hello world")
 
     def bind(self, **kwargs):
@@ -26,7 +26,7 @@ class _FakeLC:
         payload = self.payload
 
         class _Bound:
-            def invoke(_self, prompt):
+            def invoke(_self, prompt, config=None):
                 return _R(payload)
         return _Bound()
 
