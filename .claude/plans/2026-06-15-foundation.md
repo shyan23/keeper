@@ -938,7 +938,7 @@ DB tests run against the real Supabase Postgres (via `DATABASE_URL` /
 
 ## Build order
 
-See `docs/superpowers/specs/2026-06-15-medical-doc-intelligence-design.md`.
+See `.claude/specs/2026-06-15-medical-doc-intelligence-design.md`.
 This repo currently implements sub-project 1 (Foundation).
 ```
 
