@@ -21,6 +21,8 @@ def _saver(conninfo: str) -> PostgresSaver:
 
 
 def test_pg_conninfo_strips_sqlalchemy_dialect(monkeypatch):
+    # test_database_url=None so the database_url branch is exercised.
+    monkeypatch.setattr(cp.get_settings(), "test_database_url", None, raising=True)
     monkeypatch.setattr(
         cp.get_settings(), "database_url",
         "postgresql+psycopg://u:p@host:5432/db", raising=True,
@@ -30,12 +32,27 @@ def test_pg_conninfo_strips_sqlalchemy_dialect(monkeypatch):
 
 
 def test_pg_conninfo_leaves_plain_url_unchanged(monkeypatch):
+    monkeypatch.setattr(cp.get_settings(), "test_database_url", None, raising=True)
     monkeypatch.setattr(
         cp.get_settings(), "database_url",
         "postgresql://u:p@host:5432/db", raising=True,
     )
     cp.pg_conninfo.cache_clear()
     assert cp.pg_conninfo() == "postgresql://u:p@host:5432/db"
+
+
+def test_pg_conninfo_prefers_test_database_url(monkeypatch):
+    # In test/CI the checkpointer must target the test DB, never production.
+    monkeypatch.setattr(
+        cp.get_settings(), "test_database_url",
+        "postgresql+psycopg://t:t@testhost:5433/test", raising=True,
+    )
+    monkeypatch.setattr(
+        cp.get_settings(), "database_url",
+        "postgresql+psycopg://prod:prod@prodhost:5432/prod", raising=True,
+    )
+    cp.pg_conninfo.cache_clear()
+    assert cp.pg_conninfo() == "postgresql://t:t@testhost:5433/test"
 
 
 @pg

@@ -115,7 +115,9 @@ def pg_conninfo() -> str:
     Strips the SQLAlchemy '+psycopg' dialect tag so psycopg/langgraph accept
     it: 'postgresql+psycopg://...' -> 'postgresql://...'.
     """
-    url = get_settings().database_url
+    # Mirror app/db.py: test DB in tests, prod otherwise. Never prod in tests.
+    s = get_settings()
+    url = s.test_database_url or s.database_url
     return url.replace("postgresql+psycopg://", "postgresql://", 1)
 ```
 
@@ -148,12 +150,13 @@ same `thread_id`).
 Append to `tests/agent/test_checkpointer.py`:
 
 ```python
-import os
 from psycopg_pool import ConnectionPool
 from langgraph.checkpoint.postgres import PostgresSaver
+from app.config import get_settings
 
-_TEST_DB = os.getenv("TEST_DATABASE_URL")
-pg = pytest.mark.skipif(not _TEST_DB, reason="TEST_DATABASE_URL not set")
+# Read via pydantic settings (loads .env) — NOT os.getenv, which is unset here.
+_TEST_DB = get_settings().test_database_url
+pg = pytest.mark.skipif(not _TEST_DB, reason="test_database_url not set")
 
 
 def _saver(conninfo: str) -> PostgresSaver:

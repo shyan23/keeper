@@ -50,9 +50,10 @@ installed `langgraph==0.2.60` / `langgraph-checkpoint==2.1.2`. It pulls
 
 ```python
 def pg_conninfo() -> str:
-    """Plain libpq conninfo from settings.database_url.
-    Strips the SQLAlchemy '+psycopg' dialect tag: 'postgresql+psycopg://...'
-    -> 'postgresql://...'. Returns the URL psycopg/langgraph expects."""
+    """Plain libpq conninfo for the checkpointer DB. Mirrors app/db.py's
+    resolution (test_database_url or database_url) so tests target the test DB
+    and never production, then strips the SQLAlchemy '+psycopg' dialect tag:
+    'postgresql+psycopg://...' -> 'postgresql://...'."""
 
 @lru_cache(maxsize=1)
 def get_checkpointer():

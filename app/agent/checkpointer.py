@@ -14,12 +14,16 @@ logger = logging.getLogger(__name__)
 
 @lru_cache(maxsize=1)
 def pg_conninfo() -> str:
-    """Plain libpq conninfo from settings.database_url.
+    """Plain libpq conninfo for the checkpointer's database.
 
-    Strips the SQLAlchemy '+psycopg' dialect tag so psycopg/langgraph accept
-    it: 'postgresql+psycopg://...' -> 'postgresql://...'.
+    Mirrors app/db.py's resolution (test_database_url or database_url) so the
+    checkpointer lives in the SAME database as the ORM — pointing at the test
+    DB during tests, never production. Strips the SQLAlchemy '+psycopg' dialect
+    tag so psycopg/langgraph accept it: 'postgresql+psycopg://...' ->
+    'postgresql://...'.
     """
-    url = get_settings().database_url
+    s = get_settings()
+    url = s.test_database_url or s.database_url
     return url.replace("postgresql+psycopg://", "postgresql://", 1)
 
 
