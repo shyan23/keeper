@@ -9,3 +9,5 @@ venv/
 RAG_Techniques/
 .claude/settings.local.json
 /Med_documents/
+# Private golden set — contains real PHI, never commit
+eval/golden_set.private.yaml

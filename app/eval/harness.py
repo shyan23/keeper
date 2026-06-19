@@ -12,6 +12,7 @@ The model GENERATES; `scorers.py` SCORES. No LLM-as-judge.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,10 @@ import yaml
 
 from app.eval import scorers
 
-GOLDEN = Path(__file__).resolve().parents[2] / "eval" / "golden_set.yaml"
+# Default to the public synthetic set; override with GOLDEN_SET to point at a
+# private, gitignored golden file built over real (PHI) reports.
+GOLDEN = Path(os.environ.get("GOLDEN_SET")
+              or Path(__file__).resolve().parents[2] / "eval" / "golden_set.yaml")
 RESULTS = Path(__file__).resolve().parents[2] / "eval" / "last_run.json"
 
 
