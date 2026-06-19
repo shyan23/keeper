@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from typing import Any, Callable
+
+from app.agent.checkpointer import get_checkpointer
+
+logger = logging.getLogger(__name__)
 
 # Maps graph node keys to user-facing progress labels (ported from streamlit_app).
 NODE_LABELS: dict[str, str] = {
@@ -30,9 +35,18 @@ NODE_LABELS: dict[str, str] = {
 
 @lru_cache(maxsize=1)
 def get_graph():
-    """Compile the LangGraph supervisor once (in-process MemorySaver checkpointer)."""
+    """Compile the LangGraph supervisor once with a durable Postgres
+    checkpointer. Degrades to in-process MemorySaver if the DB is
+    unreachable at boot (non-durable, but the service stays up)."""
     from app.agent.graph import build_graph
-    return build_graph()
+    try:
+        return build_graph(checkpointer=get_checkpointer())
+    except Exception:
+        logger.warning(
+            "Durable checkpointer unavailable; falling back to MemorySaver "
+            "(thread state will NOT survive restart).", exc_info=True,
+        )
+        return build_graph()
 
 
 @lru_cache(maxsize=1)

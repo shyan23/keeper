@@ -77,3 +77,18 @@ def test_get_checkpointer_builds_and_persists(monkeypatch):
     )
     assert cp.get_checkpointer().get_tuple(config).checkpoint["channel_values"]["y"] == 7
     cp.get_checkpointer.cache_clear()
+
+
+from langgraph.checkpoint.memory import MemorySaver
+from app.api import runtime
+
+
+def test_get_graph_degrades_to_memorysaver_on_error(monkeypatch):
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(runtime, "get_checkpointer", boom)
+    runtime.get_graph.cache_clear()
+    graph = runtime.get_graph()
+    assert isinstance(graph.checkpointer, MemorySaver)
+    runtime.get_graph.cache_clear()
