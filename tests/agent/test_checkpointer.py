@@ -1,5 +1,23 @@
 import pytest
+from psycopg_pool import ConnectionPool
+from langgraph.checkpoint.postgres import PostgresSaver
 from app.agent import checkpointer as cp
+from app.config import get_settings
+
+# Read via pydantic settings (loads .env) — NOT os.getenv, which is unset here.
+_TEST_DB = get_settings().test_database_url
+pg = pytest.mark.skipif(not _TEST_DB, reason="test_database_url not set")
+
+
+def _saver(conninfo: str) -> PostgresSaver:
+    pool = ConnectionPool(
+        conninfo=conninfo,
+        kwargs={"autocommit": True, "prepare_threshold": None},
+        open=True,
+    )
+    s = PostgresSaver(pool)
+    s.setup()
+    return s
 
 
 def test_pg_conninfo_strips_sqlalchemy_dialect(monkeypatch):
@@ -18,3 +36,44 @@ def test_pg_conninfo_leaves_plain_url_unchanged(monkeypatch):
     )
     cp.pg_conninfo.cache_clear()
     assert cp.pg_conninfo() == "postgresql://u:p@host:5432/db"
+
+
+@pg
+def test_state_survives_restart():
+    conninfo = _TEST_DB.replace("postgresql+psycopg://", "postgresql://", 1)
+    thread = "durability-test-thread"
+    config = {"configurable": {"thread_id": thread, "checkpoint_ns": ""}}
+
+    # First "process": write a checkpoint.
+    saver_a = _saver(conninfo)
+    saver_a.put(
+        config,
+        {"v": 1, "ts": "t0", "id": "c0", "channel_values": {"x": 42},
+         "channel_versions": {}, "versions_seen": {}, "pending_sends": []},
+        {"source": "input", "step": 0, "writes": {}, "parents": {}},
+        {},
+    )
+
+    # Second "process": a fresh saver over the same store sees it.
+    saver_b = _saver(conninfo)
+    got = saver_b.get_tuple(config)
+    assert got is not None
+    assert got.checkpoint["channel_values"]["x"] == 42
+
+
+@pg
+def test_get_checkpointer_builds_and_persists(monkeypatch):
+    monkeypatch.setattr(cp.get_settings(), "database_url", _TEST_DB, raising=True)
+    cp.pg_conninfo.cache_clear()
+    cp.get_checkpointer.cache_clear()
+    saver = cp.get_checkpointer()
+    config = {"configurable": {"thread_id": "factory-test-thread", "checkpoint_ns": ""}}
+    saver.put(
+        config,
+        {"v": 1, "ts": "t0", "id": "c0", "channel_values": {"y": 7},
+         "channel_versions": {}, "versions_seen": {}, "pending_sends": []},
+        {"source": "input", "step": 0, "writes": {}, "parents": {}},
+        {},
+    )
+    assert cp.get_checkpointer().get_tuple(config).checkpoint["channel_values"]["y"] == 7
+    cp.get_checkpointer.cache_clear()
