@@ -75,8 +75,16 @@ def _extract_raw(data: bytes, *, mime_type: str, vision, progress=None) -> str:
     # OCR is the slow, blocking step; cache by content+type so a re-upload of the
     # same document is instant instead of re-running OCR page by page. Key bumped
     # to ocr2 since the stored form now uses the page separator.
-    key = make_key("ocr3", mime_type, data)
-    return get_or_set(key, lambda: _ocr(data, mime_type, vision, progress))
+    # ocr4: bumped from ocr3 to evict entries cached while Gemini was returning 404
+    # (handwriting pages fell back to garbage Tesseract text and got cached).
+    key = make_key("ocr4", mime_type, data)
+    # Reset per-doc so a Gemini failure on ANY page keeps the whole-doc OCR out of
+    # the cache (it's one entry); a later healthy run then replaces it.
+    if hasattr(vision, "gemini_failed"):
+        vision.gemini_failed = False
+    return get_or_set(
+        key, lambda: _ocr(data, mime_type, vision, progress),
+        should_cache=lambda: not getattr(vision, "gemini_failed", False))
 
 
 def _emit(progress, msg: str) -> None:

@@ -29,9 +29,12 @@ def test_patient_to_out_derives_fields():
         name = "Jane Doe"
         age = 30
         gender = "female"
+        blood_type = None
     out = mapping.patient_to_out(P(), last_visit="2026-06-10")
     assert out["id"] == "7"
-    assert out["bloodType"] == "—"
+    assert out["bloodType"] == "—"  # falls back when unknown
+    P.blood_type = "O+"
+    assert mapping.patient_to_out(P(), last_visit="")["bloodType"] == "O+"
     assert out["image"] == "https://i.pravatar.cc/150?u=Jane%20Doe"
     assert out["lastVisit"] == "2026-06-10"
     assert out["status"] == "Active"

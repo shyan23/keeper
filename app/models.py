@@ -16,6 +16,7 @@ class Patient(Base):
     name: Mapped[str] = mapped_column(String(200))
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     gender: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    blood_type: Mapped[str | None] = mapped_column(String(8), nullable=True)
     relationship: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     documents: Mapped[list["Document"]] = orm_relationship(back_populates="patient", cascade="all, delete-orphan")

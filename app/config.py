@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     rag_top_k: int = 5
     rag_confidence_threshold: float = 0.5
     gemini_api_key: str = "changeme"
-    gemini_model: str = "gemini-2.0-flash"
-    gemini_vision_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_vision_model: str = "gemini-2.5-flash"
     gemini_embed_model: str = "models/text-embedding-004"
     redis_url: str = "redis://localhost:6379/0"
     storage_dir: str = "./data/files"

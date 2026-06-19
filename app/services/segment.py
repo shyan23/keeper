@@ -70,6 +70,23 @@ def doc_type_for(title: str | None) -> str:
     return "lab report" if "report" in t else "document"
 
 
+# A prescription rarely prints a "… REPORT" header, so detect_title misses it.
+# These markers (Rx symbol, dosage-form abbreviations, doctor credentials) catch a
+# headerless prescription page so it isn't filed as a generic "document".
+_RX_MARKERS = re.compile(
+    r"\bR[x×]\b|\bTab\.|\bCap\.|\bSyp\.|\bInj\.|\bMBBS\b|\bFCPS\b|\bDr\.", re.I)
+
+
+def guess_title_type(text: str) -> tuple[str | None, str]:
+    """Best-effort (title, doc_type) for a page with no LLM-assigned report."""
+    title = detect_title(text)
+    if title:
+        return title, doc_type_for(title)
+    if _RX_MARKERS.search(text or ""):
+        return "Prescription", "prescription"
+    return None, "document"
+
+
 def _regex_segments(pages: list[str]) -> list[dict]:
     """Fallback: start a new report whenever a page shows a '… REPORT' header;
     headerless pages continue the current report."""
@@ -135,4 +152,15 @@ def split_reports(chat, pages: list[str]) -> list[dict]:
             "text": "\n\n".join(pages[i] for i in idxs),
             "pages": idxs,
         })
+    # The LLM sometimes ignores a page entirely (e.g. a prescription it didn't
+    # recognise). A page with real text must never vanish — give each orphan its
+    # own report so it still gets ingested.
+    covered = {i for s in out for i in s["pages"]}
+    for i in range(n):
+        if i in covered or not (pages[i] or "").strip():
+            continue
+        title, dtype = guess_title_type(pages[i])
+        out.append({"title": title, "doc_type": dtype, "category": None,
+                    "date": None, "text": pages[i], "pages": [i]})
+    out.sort(key=lambda s: s["pages"][0])
     return out

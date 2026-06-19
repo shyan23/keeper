@@ -42,8 +42,13 @@ def make_key(namespace: str, *parts: Any) -> str:
     return f"{namespace}:{h.hexdigest()}"
 
 
-def get_or_set(key: str, compute: Callable[[], Any], ttl: int = _DEFAULT_TTL) -> Any:
-    """Return cached JSON for `key`, else run `compute()`, cache it, and return it."""
+def get_or_set(key: str, compute: Callable[[], Any], ttl: int = _DEFAULT_TTL,
+               should_cache: Callable[[], bool] | None = None) -> Any:
+    """Return cached JSON for `key`, else run `compute()`, cache it, and return it.
+
+    `should_cache`, checked AFTER compute, gates the write: return False to keep a
+    degraded result out of the cache (e.g. OCR that fell back because the paid model
+    failed), so a later, healthy run can replace it instead of being stuck."""
     c = _client()
     if c is None:
         return compute()
@@ -55,6 +60,8 @@ def get_or_set(key: str, compute: Callable[[], Any], ttl: int = _DEFAULT_TTL) ->
         log.warning("cache read failed (%s): %s", key, e)
 
     value = compute()
+    if should_cache is not None and not should_cache():
+        return value
     try:
         c.set(key, json.dumps(value, default=str), ex=ttl)
     except Exception as e:  # noqa: BLE001 - write failure ⇒ value still returned

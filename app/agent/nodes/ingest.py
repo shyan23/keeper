@@ -22,7 +22,7 @@ from app.services.entities import persist_extraction
 from app.services.ner import merge_ner_entities
 from app.services.dates import date_from_text, parse_doc_date
 from app.services.extraction import extract_pages, extract_text, slice_pdf
-from app.services.patients import create_patient
+from app.services.patients import apply_latest_demographics, create_patient
 from app.services.segment import doc_type_for, split_reports
 from app.models import Patient
 
@@ -31,8 +31,9 @@ log = logging.getLogger("app.ingest")
 
 _EXTRACT_PROMPT = """Extract structured medical data from this document text.
 
-patient_name, patient_age, patient_gender, doc_type, doc_date and doctor are PLAIN
-values (a string or a number) — NOT objects. patient_age is an integer.
+patient_name, patient_age, patient_gender, patient_blood, doc_type, doc_date and
+doctor are PLAIN values (a string or a number) — NOT objects. patient_age is an
+integer. patient_blood is the blood group exactly as printed (e.g. "A+", "O-", "B+").
 Only the list items in diseases, symptoms, medications and tests are objects with
 a name plus confidence (0-1) and source_span (the exact text you used).
 If a field is absent, leave it null/empty.
@@ -308,6 +309,10 @@ def persist_reports_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
                             progress(warn)
                 set_file_path(s, doc_id, storage.save_bytes(pid, doc_id, ext, blob))
             total_entities += persist_extraction(s, document_id=doc_id, result=result)
+            # Keep the patient header (age/gender/blood) in sync with the newest report.
+            apply_latest_demographics(
+                s, pid, age=ex.get("patient_age"), gender=ex.get("patient_gender"),
+                blood_type=ex.get("patient_blood"), doc_date=rdate)
             text = seg.get("text") or ""
             header = (f"{ex.get('patient_name') or ''} · {seg.get('name') or 'doc'} · "
                       f"{seg.get('report_date') or ''}").strip()

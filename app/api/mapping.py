@@ -47,7 +47,7 @@ def patient_to_out(patient, last_visit: str | None) -> dict:
         "name": patient.name,
         "age": patient.age,
         "gender": patient.gender,
-        "bloodType": "—",
+        "bloodType": patient.blood_type or "—",
         "image": avatar_url(patient.name),
         "lastVisit": last_visit or "",
         "status": "Active",

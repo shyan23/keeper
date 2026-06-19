@@ -38,7 +38,7 @@ class ExtractedTest(BaseModel):
         return out
 
 
-_SCALAR_FIELDS = ("patient_name", "patient_age", "patient_gender",
+_SCALAR_FIELDS = ("patient_name", "patient_age", "patient_gender", "patient_blood",
                   "doc_type", "doc_date", "doctor")
 
 
@@ -60,6 +60,7 @@ class ExtractionResult(BaseModel):
     patient_name: str | None = None
     patient_age: int | None = None
     patient_gender: str | None = None
+    patient_blood: str | None = None
     doc_type: str | None = None
     doc_date: str | None = None
     doctor: str | None = None
