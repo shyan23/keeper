@@ -8,6 +8,7 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 pytest==8.3.4
 langgraph==0.2.60
+langgraph-checkpoint-postgres==2.0.25
 langchain-core==0.3.28
 langchain-groq==0.2.2
 langchain-ollama==0.2.2
