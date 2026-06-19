@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     storage_dir: str = "./data/files"
     app_version: str = "0.1.0"
+    # Self-hosted Langfuse tracing (opt-in). Tracing is OFF unless BOTH keys are
+    # set. host MUST stay local — never cloud.langfuse.com (medical prompts).
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "http://localhost:3000"
 
 
 @lru_cache
