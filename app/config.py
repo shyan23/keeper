@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     ai_provider: str = "groq"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
+    # Structured-output model: strict json_schema (constrained decoding) is only
+    # available on Groq for the gpt-oss family — llama-3.3 does json_object only.
+    # Free tier: 30 RPM / 8000 TPM. Used only by structured(); complete() stays on groq_model.
+    groq_structured_model: str = "openai/gpt-oss-120b"
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
     groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
