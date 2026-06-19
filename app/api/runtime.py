@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Any, Callable
 
 from app.agent.checkpointer import get_checkpointer
+from app.agent.tracing import get_handler
 
 logger = logging.getLogger(__name__)
 
@@ -65,4 +66,8 @@ def cfg(thread_id: str, deps: Any = None,
     }
     if progress is not None:
         configurable["progress"] = progress
-    return {"configurable": configurable}
+    config: dict[str, Any] = {"configurable": configurable}
+    handler = get_handler(session_id=thread_id)
+    if handler is not None:
+        config["callbacks"] = [handler]
+    return config

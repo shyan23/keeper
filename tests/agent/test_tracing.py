@@ -31,3 +31,19 @@ def test_tracing_enabled_when_both_keys_set(monkeypatch):
     assert tracing.tracing_enabled() is True
     handler = tracing.get_handler("thread-1")
     assert handler is not None
+
+
+from app.api import runtime
+
+
+def test_cfg_omits_callbacks_when_disabled(monkeypatch):
+    monkeypatch.setattr(runtime, "get_handler", lambda session_id=None: None)
+    c = runtime.cfg("thread-1", deps=object())
+    assert "callbacks" not in c
+
+
+def test_cfg_attaches_callbacks_when_enabled(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(runtime, "get_handler", lambda session_id=None: sentinel)
+    c = runtime.cfg("thread-1", deps=object())
+    assert c["callbacks"] == [sentinel]
