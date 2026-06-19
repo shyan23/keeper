@@ -1,7 +1,7 @@
 import './index.css';
 import { ApiDocument, ApiPatient, ApiRecord, CitationSource } from './types';
 import {
-  createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
+  apiUrl, createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
   resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries,
 } from './api';
 import { Chart, registerables } from 'chart.js';
@@ -815,7 +815,7 @@ function interruptCardHtml(payload: any, idx: number) {
         <p class="text-[12px] text-[#5C5852] mb-5">${s.page_count ?? '?'} pages · ${s.chart_count ?? 0} chart(s) · ${s.attachment_count ?? 0} attachment(s)</p>
         <div class="flex gap-2.5">
           <button data-act="regenerate" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#5D7B6F] py-3 rounded-xl text-xs font-extrabold">Regenerate</button>
-          <a href="${esc(s.url)}" target="_blank" class="flex-[2] text-center bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Download</a>
+          <a href="${esc(apiUrl(s.url))}" download="medical-report.pdf" class="flex-[2] text-center bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Download</a>
         </div>
       </div>`;
   }

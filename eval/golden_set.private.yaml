@@ -1,0 +1,693 @@
+extraction:
+- id: camscanner-16-6-26-11.40
+  pages:
+  - 'ID No : 3291 Test Date: 05-Oct-23 Patient''s Name : MRS. NAFISA KABIR Age : 53Y
+    Specimen : Whole Blood Sex : Female Ref. By : SELF (Estimations were carried out
+    by AC-310 Automated Haematology Analyzer & Verified manually) | HAEMATOLOGY REPORT
+    Test Name Result Reference Range Histogram Hemoglobin (Hb%) ‘11.2 gm/dl M: 13-17
+    g/dl. F & Child: 12.0-16.5 g/dl Infant: 13.0 - 19.0 g/dl ESR(Westergren) 52mm/Isthr
+    — Male:0-10, F:0-20 mm/Ist hr TOTAL WBC COUNT 8,390 /cumm Adult: 4000 - 11000,Infant:
+    6000-18000, ’ a} Child: 5000-15000,At Birth: 10,000-25,000 ‘DIFFERENTIAL COUNT
+    Neutrophils 12% Adult: 40 - 75, Child: 20-50 % Lymphocytes 1% Adult: 20 - 45,
+    Child: 40 - 75 % WaC Curve Monocytes — 05% 02-08 % Eosinophils 02% 01-06% Basophils
+    00% 00-01 % Total Cir. Eosinophils . 168/cumm 50 - 450/cumm. RBC COUNT 3.89 m/ul
+    M: 4.5-6.5, F: 3.8-5.8 mv/ul HCT/PCV 33.8% M: 40-54%, F:37-47% MCV 86.9 fL 76-94
+    fL MCH 28.8 pp, 27-32 pg RBC Curve MCHC 33.2 g/dL 29-34 g/dL RDW-CV 13.1% 10-16%
+    RDW-SD 40.9 fl 35-56 fl o Count 1,78,000 /cumm 1,50,000 - 4,00,000/cumm Vv 10.5
+    fL 7.0 - 11.0 £L PDW 19.5% 10- 18% PCT 1.77% 0.1- 0.2% PLT Curve Prepared by Veri
+    LOTIFUR RAHMAN Md.Kabir Hossain Medical Technologist B.Sc, M.Sc (Microbiology),
+    MCH MICROBIOLOGIST AMIRA MEDICAL HEALTH SERVICES LTD Amira Medical Health Services'
+  - 'Amira Acmedical health services It — pA seeieseseasineeniseonenen ee en a = Invoice
+    No 12310033291 —Invoice Date :06/10/23 —_Dolivory Dato : 08/10/23 Report No :
+    12310028687 Patient Name : MRS. NAFISA KABIR Age : 63Y Gender : Female 7 Referred
+    By :SELF 1 Sample : BLOOD LAB. No : 12310036279 | Tests: Dengue Ag NS1 (ICT) ‘
+    | Test ~ Result Dengue Ag NS1 (ICT) Negative LAO. HN i — »port Status : Finaliz«'
+  - '25/1, Darus Salam, Mirpur-1, Chaka 1216 langlacest Ph: 8035501-6, 01783 917151,
+    Web : www.bihsh.org.bd ill I CLINICAL BIOCHEMESTRY REPORT MM Invoice No: 12308078922
+    Invoice Date : 30/08/23 Delivery Date : 31/08/23 Report No :12308101508 Patient
+    Name :MRS. NAFISA KABIR Age :53Y Gender : Female Referred By :SELF Sample : BLOOD,
+    serum LAB. No : 12308154040, 12308154042 Tests : RBS (Random Blood Sugar), Uric
+    Acid Serum Coll. Time: 30/08/23 01:27 pm Receive Time : 30/08/23 02:48 pm | 30/08/23
+    02:52 pm Test is carried out by Dimension Ex! 200 Test | Result Reference Value
+    Random Blood Sugar (RBS) 5.86 mmol/L <7.8 mmol/L. Uric Acid 2.59 mg/dL Male: 3.4-7.0
+    mg/dL Female: 2.4-5.7 mg/dL.'
+  - 'Diabetic Association of Bangladesh BIHS GENERAL HOSPITAL 125/1, Darus Salam,
+    Mirpur-1, Dhaka-1216, Bangladesh Ph: 8035501-6, 01783 917151, Web : www.bihsh.org.bd
+    ANNAN CLINICAL BIOCHEMISTRY REPORT _DIIIIINVINIININNININII Invoice No 112308078922
+    Invoice Date : 30/08/23 Delivery Date : 31/08/23 Report No : 12308101506 Patient
+    Name : MRS. NAFISA KABIR Age : 53Y Gender : Female Referred By :SELF =e Sample
+    : SERUM LAB. No : 12308154041 Tests : TSH, FT4 Coll. Time: 30/08/23 01:27 pm Receive
+    Time : 30/08/23 02:52 pm Test is carried out by Vitros 3600 Test Result Reference
+    Value l ©y TSH 2.97 mlU/L. 0.6 - 4.5 mIU/L ‘i F-14 14.4 pmol/L 9.30-22.10 pmovL'
+  expect:
+    patient_name: MRS. NAFISA KABIR
+    patient_age: 53Y
+    patient_gender: Female
+    tests:
+    - name: Hemoglobin (Hb%)
+      value: 11.2 gm/dl
+    - name: ESR(Westergren)
+      value: 52 mm/1st hr
+    - name: TOTAL WBC COUNT
+      value: 8,390/cumm
+    - name: Neutrophils
+      value: 72%
+    - name: Lymphocytes
+      value: 21%
+    - name: Monocytes
+      value: 05%
+    - name: Eosinophils
+      value: 02%
+    - name: Basophils
+      value: 00%
+    - name: Total Cir. Eosinophils
+      value: 168/cumm
+    - name: RBC COUNT
+      value: 3.89 m/ul
+    - name: HCT/PCV
+      value: 33.8%
+    - name: MCV
+      value: 86.9 fL
+    - name: MCH
+      value: 28.8 pg
+    - name: MCHC
+      value: 33.2 g/dL
+    - name: RDW-CV
+      value: 13.1%
+    - name: RDW-SD
+      value: 40.9 fl
+    - name: Platelet Count
+      value: 1,78,000/cumm
+    - name: MPV
+      value: 10.5 fL
+    - name: PDW
+      value: 19.5%
+    - name: PCT
+      value: 1.77%
+    - name: Dengue Ag NS1 (ICT)
+      value: Negative
+    - name: Random Blood Sugar (RBS)
+      value: 5.86 mmol/L
+    - name: Uric Acid Serum
+      value: 2.59 mg/dL
+    - name: TSH
+      value: 2.97 mIU/L
+    - name: F-T4
+      value: 14.1 pmol/L
+- id: camscanner-18-6-26-02.16
+  pages:
+  - 'LA\ Customer Service 01766662888 LAB ID LTD. (DIAGNOSTIC), MIRPUR A I D LTD AOA
+    BIOCHEMISTRY REPORT INL Invoice No :P2104253562 Invoice Date : 10/04/21 Delivery
+    Date ; 10/04/21 Report No : 122104479625 Patient Name : MS. NAFISA KABIR Address
+    Age: 50 Y Referred By :DR.NANDO DULAL SAHA MBBS, BCS, PGT Gender : Female Contact
+    No. :01711738854 Sample : BLOOD LAB. No :122104622108 Tests — : Creatinine Serum,
+    ALT(SGPT) Blood Sample Collected:10/04/21 10:59 am Sample Received: 10/04/21 11:12
+    am (48) ] Test Result Reference Value ALT (SGPT) Upto 42 U/L 60 - 130, F: 53-420
+    moi/L'
+  - 'Customer Service 01766662888 LAB LABAID LTD. (DIAGNOSTIC), MIRPUR AID LTD AOA.
+    CQNNNOA A SEROLOGY REPORT IOUNN TA Invoice No :P2104253662 Invoice Date :10/04/21
+    Delivery Date : 10/04/21 Report No :122104479663_ Patient Name : MS. NAFISA KABIR
+    Age: 50 Y Gender : Female Address 4 Contact No. : 01711738854 Referred By :DR.
+    NANDO DULAL SAHA MBBS, BCS, PGT “ (40) Sample : BLOOD. LAB. No : 122104622106
+    Tests — : CRP (C-Reactive Protein) Sample Collected:10/04/21 10:59 am Sample Received:
+    10/04/21 11:12 am Test i oe Result Reference Vzlue CRP (C-Reactive Protein) 0.20
+    mg/L < 6.0 mg/L Instrument: Dimension RxL Max/Getein 1100 ee'
+  - 'Hh afer cafecaet Serr www.z-healthcare.com Email : zhealthcare@gmail.com MEDINET
+    MEDICAL SERVICES Email: medinethospitai@ennal-com Invoice No M364302 Reg No: Inv
+    Date :25.02.2021 Delivery Date - 27.02.2021 Patient''s Name : MRS. NAFISA KABIR
+    Age 150 YRS Gender : Female Specimen + Blood Bed No : Coll.Time : 25/02/2021 9:01:00
+    PM Investigation : CBC (TC. DC. HB% ESR PC RBC) Coll. By : rubel Ref. By ! Dr.
+    Nazmun Nahar (Mili). MBBS,FCPS, (FP) C.C.D, D-Card (Cardiology) HAEMATOLOGICAL
+    REPORT Relevant estimations Are carried out by SYSMEX-XN-550 & SYSMEX-XT-1800i
+    and Checked Manualy Test Name Result Unit Reference Range Haemoglobin 11.6 g/d
+    Child:10.5-15 g/dl,Adult:11.0-15.0 . Z oa ea _ gf . a ESR: Capillary method 30
+    mm /1st HoiMale:0-10, Female:0-20 mm/1st —— aasrensteess BOUL x 1043/uL Child:4-15x10%3/ul,Adult:4-11x10*3
+    Total Count Taal Total WBC Count Jul Neutrophils x1043/ul — 2.16-6.04x10%3/ul
+    Lymphocytes x10%3/ul —0.60-3.06x10%3/ul Monocytes x 10A3/uL 0.00-0.60xx 10%3/uL
+    Eosinophils x 1043/uL 0.00-0.40x 10%3/uL Basophil x 1043/uL 0.00-0.08x 1043/uL
+    Differential C Neutrophils 42 % Child:25-66%,Adult:40-70% Lymphocytes : 51 % (20-40)%
+    Monocytes 06 % (2-10)% Eosinophils 01 % (1-6)% Basophil 00 % <01% RBC Panel ‘
+    Total RBC Count 4.19 x10%6/ul 3.5-5.5x10%6/ul P.C.V/HCT ‘ % Female: 36 - 48 %,
+    Male: 40 - 52 % M.C.V fl 80-95 f1 M.C.H 27.7 po 27-34 pg M.C.H.C ’ 32.4 g/dL 30-359
+    /di R.D.W-S.D 42.6 fl 39.00-46.00 fl R.D.W-C.V 13.4 % 11.00-14.00 % PLT Panel
+    : Platelets Count 189 x 1043/uL 150-450X10%3/pl MPV 11.60 | 9-138 P-LCR 37.2 %
+    13-43% PDW 14.5 fl 9-171 PCT 0.22 % %'
+  - 'cfecas cafecpet aSert MEDINET MEDICAL SERVICES Invoice No :M364302 Patient''s
+    Name : MRS. NAFISA KABIR Specimen 2 Blood Investigation = Lipid Profile Ref. By
+    Chemistry Analyzer Test Name Result Unit Lipid Profil S Cholesterol(Total) 191.0
+    mg/dl S Cholesterol(HDL) 44.1 mg/dl S Cholesterol(LDL) 123 mg/dl S. Triglycerides
+    99.3 me/dl Total Cholesterol / HDL Ratio 4.33 LDL / HDL Ratio pant 2.79 Inv Date
+    :25.02.2021 Delivery Date : 27.02.2021 Age 150 YRS Coll.Time : Dr. Nazmun Nahar
+    (Mili). MBBS,FCPS, (FP) C.C.D, D-Card (Cardiology) BIOCHEMISTRY REPORT www.z-healthcare.com
+    Email : zhealthcare@gmail.com www.medinethospital.com Email : medinethospital@gmail.com
+    Gender : Female 25/02/2021 9:00:59 PM Coll. By  rubel Relevant estimations are
+    carried out by Olympus AU 400/ABX Pentra 400/Vitros 350 Automated Reference Range
+    <200 Desirable, 200-239 Borderline, >=240_ High <40 Low >= 60. High. <100 Optimal
+    100-129 Near or above optimal 130-159 Borderline high 160-189 High >=190 Very
+    high <150 Normal 150-199 Borderline 200-499 High >=500 Very high <5.0 <3.50'
+  - 'Customer Service 01766662888 LABAID LTD. (DIAGNOSTIC), MIRPUR wn: ODODE sd By:
+    MYSOFT Ltd. MONONA LAB AID LTD X-RAY REPORT Ey P2104256170 Invoice Date : 30/04/2021
+    Delivery Date - 01/05/2021 Report No. 2104169614 Patient Name: MS. NAFISA KABIR
+    Age 48 ¥ Gender : F Ref. Doctor: | DR.M A BASET MBBS. C.C.D(BIRDEM Test Name:
+    X-Ray 1 Film 100% CXR PA DIGITAL Diaphragm : Normal in position, contour & definition.
+    Basal angles are free. Heart : Normal in transverse diameter. Lung fields : Both
+    lung fields are clear. Bony thorax : Reveals no abnormality. Impression : Normal
+    chest skiagram. —'
+  expect:
+    patient_name: MS. NAFISA KABIR
+    patient_age: 50 Y
+    patient_gender: Female
+    tests:
+    - name: ALT (SGPT)
+      value: 26 U/L
+    - name: Creatinine
+      value: 71 µmol/L
+    - name: CRP (C-Reactive Protein)
+      value: 0.20 mg/L
+    - name: Haemoglobin
+      value: 11.6 g/dL
+    - name: 'ESR: Capillary method'
+      value: 30 mm/1st Hour
+    - name: Total WBC Count
+      value: 3.66 x 10^3/uL
+    - name: Absolute Neutrophils
+      value: 1.52 x 10^3/ul
+    - name: Absolute Lymphocytes
+      value: 1.77 x 10^3/ul
+    - name: Monocytes (Absolute)
+      value: 0.34 x 10^3/uL
+    - name: Eosinophils (Absolute)
+      value: 0.02 x 10^3/uL
+    - name: Basophil (Absolute)
+      value: 0.01 x 10^3/uL
+    - name: Neutrophils (%)
+      value: 42%
+    - name: Lymphocytes (%)
+      value: 51%
+    - name: Monocytes (%)
+      value: 06%
+    - name: Eosinophils (%)
+      value: 01%
+    - name: Basophil (%)
+      value: 00%
+    - name: Total RBC Count
+      value: 4.19 x10^6/ul
+    - name: P.C.V/HCT
+      value: 35.8%
+    - name: M.C.V
+      value: 85.4 fL
+    - name: M.C.H
+      value: 27.7 pg
+    - name: M.C.H.C
+      value: 32.4 g/dL
+    - name: R.D.W-S.D
+      value: 42.6 fL
+    - name: R.D.W-C.V
+      value: 13.4%
+    - name: Platelets Count
+      value: 189 x 10^3/uL
+    - name: MPV
+      value: 11.6 fl
+    - name: P-LCR
+      value: 37.2%
+    - name: PDW
+      value: 14.5 fl
+    - name: PCT
+      value: 0.22%
+    - name: S Cholesterol(Total)
+      value: 191.0 mg/dl
+    - name: S Cholesterol (HDL)
+      value: 44.1 mg/dl
+    - name: S Cholesterol (LDL)
+      value: 123 mg/dl
+    - name: S. Triglycerides
+      value: 99.3 mg/dl
+    - name: Total Cholesterol / HDL Ratio
+      value: '4.33'
+    - name: LDL / HDL Ratio
+      value: '2.79'
+- id: one
+  pages:
+  - 'Customer Service 01766662888 LABAID LTD. (DIAGNOSTIC), MIRPUR DINU CR SCAN REPORT
+    MRN 0000507491 Visit Type Patient''s Name : NAFISA KABIR Age/Gender Film Taken
+    on : Reported Date Time Referred By : SELF. Accession No. Procedure : X-RAY 1
+    FILM 100% CXR PA DIGITAL _ Invoice Number Diaphragm : Normal in position, contour
+    & definition. Basal angles are free. a Heart : Normal in transverse diameter.
+    Lung fields : Both lung fields are clear. Bony thorax __: Reveals no abnormality.
+    Impression : Normal chest skiagram. 43 Dr. Md. ae, Ullah : Out Patient :50 Years/Female
+    : 08/02/2021 16:34 :CR128534 : INV-O-1004-21005778 MBBS, MD (Radiology & Imaging)
+    Assistant Professor Department of Radiology & Imaging National Institute of ENT
+    Consultant, Labaid Mirpur'
+  - 'Customer Service 01766662888 LAB LABAID UD. (DIAGNOSTIC), MIRPUR AID LTD OANA
+    HAEMATOLOGY REPORT IANA | Invoice No: 2010232329 Invoice Date :05/10/20 Delivery
+    Date 06/10/20 Report No : 422010438171 Patient Name : MRS. NAFISA KABIR Age: 49
+    Y Gender : Female | | Address 2 Contact No. :01711346151 | | Referred By :DR.MABASET
+    MBBS. C.C.D(BIRDEM | Sample : WHOLE BLOOD LAB. No "122010567008 a - ~ J | Tests
+    : TCIDCMBYESR/PCVIPLATELETS COUNT-PMCT | | Sample Collected:05/10/20 04:54 pm
+    sane Seto 05/10/20 05:44 pm Test | ~ Reference Value “| F 11.5- 15.5, M 13.5 -
+    18.0 g/dL M<10 mm in 1st hour, F<20 mm in 1st hour 0) x Haemog lobin ESR (Westergren
+    Method) Total Count © Red Blood Cells 3.8 X 10%12/L F3.8-4.8,M4.5-5.5 X 10M2/L
+    Platelets cr ~ ~— “470 X10°9/L : ‘ 150 - 450 X 10°9/L White Blood Cells 5.4 X
+    10°9/L 04.00 - 11.00 X 109/L 55 % 40-75% : 32% : “20-50 % 06 % 02-10% “07% Ss
+    ‘ : 04-06% = 00 % i <01 % 33 % F: 37-47 %,M: 40-52% 86 fL 82-100 fL ¢ 1 Wb St
+    32 g/dL - er - 30 - 38 g/dL : = : we ce} SG = s ao) 2 3 @ x 3 Prepared By :: bPrhohammad
+    Manirul Islam 8 Lubna Nahar MBBS, FCPS (Haematology) Assistant Professor = talame'
+  - 'LAB AID LTD HINO BIOCHEMISTRY REPORT NINA Invoice Date 05/10/20 Report No : 122010438157
+    Patient Name : MRS. NAFISA KABIR Age: 49 Y Gender : Female Address e Referred
+    By ~ Delivery Date : 06/10/20 Contact No. :01711346151 DR. MA BASET MBBS. C.C.D(BIRDEM
+    Sample : BLOOD Tests LAB. No : 122010567910 (150) : Creatinine Serum, ALT(SGPT)
+    Blood Sample Collected:05/10/20 04:54 pm Test Reference Value ALT (SGPT) Upto
+    42 U/L Creatinine M: 60 - 130, F: 53 - 120 pmol/L'
+  - 'o Lipid Profile Serum zs 3 Lod Ww 3 > = = 3 $ 3 & VOSTIC), MIRPUR BIOCHEMISTRY
+    REPORT “Invoice No :P2010232329 —Invoice Date :05/10/20 Delivery Date : 06/10/20
+    Patient Name : MRS. NAFISA KABIR Age: 49 Y Address Referred By :DR.MABASET MBBS.
+    C.C.D(BIRDEM Sample ; BLOOD Tests LAB. No : 122010567910 + Lipid Profile Serum
+    (R) Sample Collected:05/10/20 04:54 pm Sample Received: 05/10/20 05:44 pm Test
+    Result — ey L 44 mg/dL Ref. Range Total Cholesterol < 200 200-239 >= 240 <40 >=60
+    g/dL < 100 100 - 129 130 - 159 160 - 189 a oe _ >= 190 426) mg/dL <150 150-199
+    200-499 Belk >=500 ~ 470 mg/dl. 30 mg/dl © higher than LDL goal Program. LAB AID
+    LTD IONIAN Report No : 122010438156 Gender : Female Contact No. :01711346151 (150)
+    Classification Desirable Borderline High Low High Optimal Near or above Optimal
+    Borderline High High Very High Normal Borderline High Very High The Ref Range
+    are according to the recommendations of Adult Treatment Panel III (ATP Ill) of
+    National Cholesterol Education'
+  - 'LAB AID LTD IMMUNOLOGY REPORT IATL Invoice No :P2010232329 _—invoice Date :05/10/20
+    _Delivery Date : 06/10/20 Report No : 122010438190 Patient Name : MRS. NAFISA
+    KABIR Age: 49 Y Gender : Female Address Contact No. :01711346151 Referred By :DR.MABASET
+    MBBS. C.C.D(BIRDEM Sample ; BLOOD LAB. No : 122010567911 (83) Tests —: Free-TafF-T4,
+    TSH Sample ColjgCted:05/10/20 04:54 pm Sample Received: 05/10/20 05:44 pm Reference
+    Value 0.27 - 4.2 wlU/mL 4.14 ng/dl 0.93 - 1,7 ng/dL Method: Automated Chemiluminescence
+    Immunoassay Instrument: Liaison DiaSorin, Italy, Advia Centaur CP Method: Automated
+    Chemiluminescence Immunoassay Instrument: Liaison DiaSorin, Italy, Advia Centaur
+    CP Nete (If any) : i) TSH levels are subject to circadian variation, reaching
+    peak values between 2-4 a.m. and at 2 minir between 6-10 p. m. The variation is
+    of the order of 50%, hence, time of the day has influence on the measured serum
+    TSH concentrations. ii) Interpretation of TSH values needs professional judgement
+    and clinical correlation.'
+  - 'Mee MIRPUR L A B ‘ AID . LTD IDI SEROLOGY REPORT IAL OIA Invoice No —_: P2010232329
+    Invoice Date 05/10/20 i Delivery Date : 06/10/20 Report No : 122010438192 Patient
+    Name : MRS. NAFISA KABIR Age: 49 Y Gender : Female Address Contact No. :01711346151
+    Referred By :DR.MABASET MBBS. C.C.D(BIRDEM Sample : BLOOD LAB. No :122010567509
+    Tests — : D-Dimer Sample Collected:05/10/20 04:54 pm Sampté Received: 05/10/20
+    05:44 pm Re: : Reference Value < 05 yg FEU/mL (FEU = Fibrinogen Equivalent) Test
+    D-Dimer Method: Immunoturbidimetric assay Instrument: Cobas c 501, Germany'
+  - '1C, DHANMONDI LAB AID LTD ee eT IMMUNOLOGY REPORT Invoice Date :05/10/20 i Delivery
+    Date 1 06/10/20 Report No 112010459766 HANUMAN Invoice No q P2010232329 Patient
+    Name : MRS. NAFISA KABIR Age: 49 Y Gender : Female Address Contact No. :01711346151
+    Referred By :DR.MABASET, MBBS. C.C.D le : a _ ~ (258) Sample : BLOOD ~—LAB.No
+    2122010795213 Tests — ; Anti-Thyroglobulin Ab Sample Received: 05/10/20 11:02
+    pm Sample Collected:05/10/20 10:40 pm | Interpretation <60 U/mL = Negative >60
+    U/mL = Positive Test <3) Anti-Thyroglobulin Ab Method: Automated Chemiluminescence
+    Immunoassay Instrument: — Advia Centaur XP Note : Anomolous result may be observed
+    in presence of heterophilic antibodies in patient''s serum. z: c'
+  expect:
+    patient_name: MRS. NAFISA KABIR
+    patient_age: 49 Y
+    patient_gender: Female
+    tests:
+    - name: Haemoglobin
+      value: 10.8 /gdL
+    - name: ESR (Westergren Method)
+      value: 37 mm in 1st hour
+    - name: Red Blood Cells
+      value: 3.8 x 10^12/L
+    - name: Platelets
+      value: 170 x 10^9/L
+    - name: White Blood Cells
+      value: 5.4 x 10^9/L
+    - name: Neutrophil
+      value: 55%
+    - name: Lymphocyte
+      value: 32%
+    - name: Monocyte
+      value: 06%
+    - name: Eosinophil
+      value: 07%
+    - name: Basophil
+      value: 00%
+    - name: P.C.V. (Hct)
+      value: 33%
+    - name: M.C.V.
+      value: 86 fL
+    - name: M.C.H.
+      value: 28 pg
+    - name: M.C.H.C.
+      value: 32 g/dL
+    - name: ALT (SGPT)
+      value: 19 U/L
+    - name: Creatinine
+      value: 89 µmol/L
+    - name: Total Cholesterol
+      value: 214 mg/dL
+    - name: HDL Cholesterol
+      value: 44 mg/dL
+    - name: LDL Cholesterol
+      value: 145 mg/dL
+    - name: Triglycerides
+      value: 126 mg/dL
+    - name: Non-HDL Cholesterol
+      value: 170 mg/dl
+    - name: TSH
+      value: 8.82 U/mL
+    - name: F-T4
+      value: 1.14 ng/dL
+    - name: D-Dimer
+      value: 0.322 µg FEU/mL
+    - name: Anti-Thyroglobulin Ab
+      value: '>500.0 U/mL'
+- id: prescription
+  pages:
+  - 'Uls =H oTeta Pat SAAR, RPGR (Tg) ey Medi OIC edinet SARS (ORES Orca), RoR = Hospital
+    Lic. PICA CAIART Prete CN FIC Haire BARS OVS aw BAO “The spirit to care AIM, OT
+    Ut- LES K4 Name : Mé&s - Nofisa, Kabir : Age: 5o7r. Date: 10-03-24 <Recursent
+    loose Ry. ob. | ; ; Jab. Kos 35 ee Ta chen Spor > Wp op Bt “Ser Sti di ——_—— 2.
+    aw! 2144 [oss - ae Yenc A ng “aller , . Actoria ne TT a ie fe. TOW, pag (at 3,6
+    arr eq/ be A Tab. Auilin = 40 "}: 2 SIN iis (0c Z ESR s Lows CRE ——. CR - TSH
+    ese reariretniet FraPrOTe oa APA HATST ATHCOT AAT ARIAT ATH STAT La CHEAT CHRCET
+    ASOT -_ 7-Healthcare Ltd'
+  - '8 HR alera fat '' TARR, RR Cay) '' e Tas Corea Rg IaATHSS "i. Medinet MCAT wet
+    The spirit to care AIH, OPH m4 Fel Reunten} fore yrten 3 neck abo R ut 550 ee
+    se Fay J C 7 Bestel _ tril 5 ent) aq) pears (ame MeN) spe / . Tab. Yamadin 20
+    ymiony Oe | Gravilae nts AW oft Salle [Oo (ot 3¢e gi fa ee ER _ . : ie 16 Tet
+    _ Sa / | RB: 0 to-ND sao / _ TH avait [0 gh BE OE ER ats soy emg | SA soveesseessserenere
+    PASTS SF TACT an HAT ARI ACK SATA | W A srsconecona Oe Hotline : 01705 458900-6
+    MY FREE aero ASO AP sali Soil Sag'
+  - 'Dr. Nazmun Naher Mili vis MBBS, FCPS (Medicine) F.P gufattan, Gara, (cafefin)
+    ae ft PGT (Medicine) ene ology) fr fe. f6 (cafern). F.F.f8 (atacem) PGT (Cardiology)
+    D.Ca ardiolog Dha as Mec dical Col : fr fet crivond) Bre (aifteetat) icine, Di
+    Tdi eciali tes “Tob Exton muy (200 | [peewee * Burning elas 404-9 (ae ump peli
+    Wao alrot , Tate Datlux (109 a a re 2 aN de> , 0 fs hay, Bb ou 2 oF oft aN Wet
+    a ‘ / yt ru a Eat see i out CO fw— , $. Elects) 7 Cap- eee mg : ae i ( nag Taly
+    Fronxtt sire / AN (tile 489 / @BC | | aesnasmaanne fry ear 2 saeraemannetiae cel
+    8 SPTAl to care Z-Healthcare Ltd. =P h Medinet VA Core-taareceata fers Hotline
+    : 01705 458900-6 a os a Caeit amtra tom a'
+  - '©01766662888 ARS fers (GUPTA EN), aya BB 08, OFFTA 0d, FH-f, aga d, DAT dS GHIA:
+    02-BHOOKSY-Fd, 094 nn 3402-9 Ba : 0d4 GUBY dLOB PROF. DR. SUDHANGSHU SHEKHAR BISWAS
+    MBBS (DMC), DLO FCPS (ENT), FRCS (Glasgow) Special Trained in Endoscopic Sinus
+    Surgery Ear-Nose-Throat Specialist & Head-Neck Surgeon Microscopic Ear Surgery
+    (India) PROFESSOR & HEAD Department Of ENT & Head-Neck Surgery BIRDEM General
+    Hospital & 14 08Z 13 478.99 Ibrahim Medical Collee, Dhaka 22 AUG 2023 % wo A vatel
+    A ary ° Gin gyx wiKK May — ins *XE Vibes plun eivthdl on of ptoKeD . CA phayreal;
+    GERD RMex ay - erg [Ge CR Prva _- (romp OFr6-+) ITO ia Al ital ro °F iy BH © fen
+    i ae oxo7> AV. 5 a © New w- Gow H¥CTR.  Frevox ohetn oa i ee =D 2D 3 C re. ee
+    7O— oS. WI 940 > 6976 Prof. Dr, Sudhangshu Shekhar Biswas MBBS (DMC). DLO. FCPS
+    (ENT). FRCS (Glasgom) Professor & Head Department of ENT & Head-Neck Surg BIRDEM
+    General Hospital & Ibrahim Medical College, Dhaka "= 1°='
+  - 'wa 2 nira medical health services Vd SAAS eae ID No : 3291 Test Date: 05-Oct-23
+    Patient''s Name : MRS. NAFISA KABIR Age : 53Y Specimen : Whole Blood Sex : Female
+    Ref. By : SELF (Estimations were carried out | by AC-310 Automated Haematology
+    Analyzer & Verified manually) |__HAEMATOLOGY REPORT _ Test Name Result Reference
+    Range Histogram Hemoglobin (Hb%) ‘11.2 gin/dl M: 13-17 g/dl. F & Child: 12.0-16.5
+    g/dl Infant: 13.0 - 19.0 g/dl ESR(Westergren) 52mm/Isthr Male:0-10, F:0-20 mm/Ist
+    hr TOTAL WBC COUNT 8,390/cumm _— Adult: 4000 - 11000,Infant: 6000-18000, () Child:
+    5000-15000,At Birth: 10,000-25,000 ™ DIFFERENTIAL COUNT Neutrophils _ 2% Adult:
+    40 - 75, Child: 20-50 % Lymphocytes 21% Adult: 20 - 45, Child: 40 - 75 % WBC Curve
+    Monocytes 05% 02-08 % Eosinophils 02% 01-06% Basophils 00% 00-01 % Total Cir.
+    Eosinophils 168 /cumm 50 - 450/cumm RBC COUNT 3.89 m/ul M: 4.5-6.5, F: 3.8-5.8
+    m/ul HCT/PCV "33.8% M: 40-54%, F:37-47% MCV 86.9 fL 76 - 94 £L MCH 28.8 pg, 27
+    - 32 pg RBC Curve MCHC 33.2 g/dL 29 - 34 g/dL RDW-CV 13.1 % 10-16% RDW-SD 40.9
+    f1 35 - 56 fl Platelet Count 1,78,000 /cumm 1,50,000 - 4,00,000/cumm =viPV 10.5
+    fL 7.0 - 11.0 fL PDW 19.5% 10- 18% PCT 1.77% 0.1- 0.2% PLT Curve — Verifipe-Dy
+    , LOTIFUR RAHMAN ba oe Medical Technologist B.Sc, M.Sc (Microbiology), MCH MICROBIOLOGIST
+    AMIRA MEDICAL HEALTH SERVICES LTD Medical Health Services Ltd.'
+  expect:
+    patient_name: Mrs. Nafisa Kabir
+    patient_age: 50 years
+    doctor: Dr. Shah Alam Mia
+    medications:
+    - name: Acteria
+    - name: Afrin nasal drop
+    - name: Amilin 10 / Tryptin
+    - name: Asynta
+    - name: Deflux (10 mg)
+    - name: Exium mups (20mg) / Nexium (20mg)
+    - name: Frenxit
+    - name: Garilac / Asynta
+    - name: Menofemin-40 mg
+    - name: Nebanof plus ointment
+    - name: Pantonix
+    - name: Provain
+    - name: Provain 10
+    - name: Renova XR
+    - name: Rifugut
+    - name: Rostreil
+    - name: Rostril
+    - name: Thyroxin
+    - name: Thyroxin (50 mcg)
+    - name: Tofen
+    - name: Trevox
+    - name: Yamadin 20
+- id: tests
+  pages:
+  - 'Reman = rvanins one me wren mesa Ca bia Tots POPULAR DIAGNOSTIC CENTRE LTD. ee
+    __ Shantinagar Branch : 11 No. Shantinagar (Popular Tower, Shantinagar Chowrasta)
+    Dhaka, Hotline : 09613787803, 09666787803 POPULAR Head Office : House # 16, Road
+    # 2, Dhanmondi, Dhaka, Hotline : 09613 787801, 09666787801, E-mail : info@populardiagnostic.com,
+    Web : www populardiagnostic.com LABORATORY SERVICES Patient Name Mrs. Nafisa Kabir
+    30123643 {NNN UA 024 Lab No UHID 30101 Sample Date 20/09/2021 11:33AM Age/Gender
+    50 Yrs/Female Receiving Date 20/09/2021 12:56PM Referred By AD-DIN HOSPITAL. Report
+    Date 20/09/2021 3:12PM Report Status Final { Test Name Result Unit Reference Range
+    HAEMATOLOGY CBC. ESR Sample: WHOLE BLOOD Total Count White Blood Cells 6.50 K/pL
+    4.00 - 10.00 C Neutrophils 3.90 K/pL 2.00 - 7.00 Lymphocyte 1,95 K/pL 1.00 - 3.00
+    Monocyte 0.20 K/pL 0.20 - 1.00 Eosinophil 0.46 K/pl 0.02 - 0.50 Differential Leucocyte
+    Count Neutrophil% 60. % 40.00 - 80.00 Lymphocyte% 30 % 20.00 - 40.00 Monocyte%
+    03 % 2.00 - 10.00 Eosinophil% 07 % 1.00 - 6.00 Basophil% 00 % <1-2 Red Blood Cells
+    4.06 million/pl 3.80 - 4.80 Haemoglobin 11.20 g/dL 12.00 - 15.00 HCT 36.30 % 34.80
+    - 45.00 MCV 89.4 fl 79 - 96 MCH 27.6 pg 26 - 33 MCHC 30.9 g/dL 32 - 36 RDW-CV(%)
+    13.4 % 11-15 Platelets 250 K/pL 150-410 MPV 10.90 fl 6.30 - 9.10 PCT 0.27 % PDW
+    12.90 fl ESR 43 mny/hr 0-19'
+  - 'oOo q Wrslts rahe cr-btra fer3 POPULAR DIAGNOSTIC CENTRE LTD. ee Shantinagar
+    Branch : 11 No. Shantinagar (Popular Tower, Shantinagar Chowrasta) Dhaka, Hotline
+    : 09613787803, 09666787803 Head Office: House # 16, Road # 2, Dhanmondi, Dhaka,
+    Hotline: 09613 787801, 09666787801, E-mail : info@populardiagnostc.com, Web :
+    www.populardiagnostic.com LABORATORY SERVICES POPULAR IANO Patient Name Mrs. Nafisa
+    Kabir tape 30123643 UHID 30101024 Sample Date 20/09/2021 11:33AM Age/Gender 50
+    Yrs/Female Receiving Date 20/09/2021 1:01PM Referred By AD-DIN HOSPITAL. Report
+    Date 20/09/2021 3:14PM Report Status Final [ Test Name Result Unit Reference Range
+    ] IMMUNOLOGY Sample: Serum HBs Ag Sample Index 0.12 Cut Off Index 1.00 Opinion
+    Negative'
+  - '10/6/2020 Medicare Web Customer Service 01766662888 LAB !ABAID LTD. (DIAGNOSTIC),
+    MIRPUR AID LT o COMO X-RAY REPORT IMMA Invoice No : P2010232329 Invoice Date :
+    05/10/2020 —_ Delivery Date : 06/10/2020 — Report No. : 2010151903 Patient Name:
+    MRS. NAFISA KABIR Age :49Y Gender : F Ref. Doctor : DR. M A BASET MBBS. C.C.D(BIRDEM
+    Test Name : X-Ray 1 Film 100% CXR PA DIGITAL 3 a - is fo} n > Diaphragm : Normal
+    in position, contour & definition. Basal angles are free. Heart : Normal in transverse
+    diameter. Lung fields : Both lung fields are clear. Bony thorax : Reveals no abnormality.
+    Impression : Normal chest skiagram.'
+  - '0 Gmail - Name : Mrs Nafisa Kabir ,,,,, SAGs Gre ATT TT 67, FE as eS Te Gas °
+    GRAS catbcer aC evitetnee ame wht mal | . MEDINET MEDICAL SERVICES Gee Qiaaiea
+    hia aT Ms CHES GATE, TCM TITS TA Ps . 7 info@medinetbd.com 00-%, Name : Mrs Nafisa
+    Kabir ,,,,,,Age : 49 Years... torr © soos, este zakir hossen <medinetcare@gmail.com>
+    To: zakir hossen <medinetcare@gmail.com> Tue, Oct 6, 2020 at 8:43 PM Tab thyrox
+    25mcg 1 tab at morning Tab bislol 2.5mg 1 tab at night C » Tab cinaron » 1+0+1
+    PI come after 6 weeks Professor Dr. Faridul Alam C >'
+  expect:
+    patient_name: Mrs. Nafisa Kabir
+    patient_age: 49 years
+    patient_gender: Female
+    doctor: Professor Dr. Faridul Alam
+    tests:
+    - name: White Blood Cells
+      value: '6.50'
+    - name: Neutrophils
+      value: '3.90'
+    - name: Lymphocyte
+      value: '1.95'
+    - name: Monocyte
+      value: '0.20'
+    - name: Eosinophil
+      value: '0.46'
+    - name: Neutrophil %
+      value: '60'
+    - name: Lymphocyte %
+      value: '30'
+    - name: Monocyte %
+      value: '03'
+    - name: Eosinophil %
+      value: '07'
+    - name: Basophil %
+      value: '00'
+    - name: Red Blood Cells
+      value: '4.06'
+    - name: Haemoglobin
+      value: '11.20'
+    - name: HCT
+      value: '36.30'
+    - name: MCV
+      value: '89.4'
+    - name: MCH
+      value: '27.6'
+    - name: MCHC
+      value: '30.9'
+    - name: RDW-CV (%)
+      value: '13.4'
+    - name: Platelets
+      value: '250'
+    - name: MPV
+      value: '10.90'
+    - name: PCT
+      value: '0.27'
+    - name: PDW
+      value: '12.90'
+    - name: ESR
+      value: '43'
+- id: two
+  pages:
+  - 'Customer Service 01766662888 LAB LABAID LTD. (DIAGNOSTIC), MIRPUR 3 bs] ro} a
+    > = a a aod 2 3 o a AID LTD OU X-RAY REPORT OO Invoice No: P2104256170 —_Invoice
+    Date : 30/04/2021 Delivery Date : 01/05/2021 Report No. : 2104169614 Patient Name:
+    MS. NAFISA KABIR Age :48 Y Gender : F Ref. Doctor: | DR.MABASET MBBS, C.C.D(BIRDEM
+    Test Name : X-Ray 1 Film 100% CXR PA DIGITAL Diaphragm : Normal in position, contour
+    & definition. Basal angles are free. Heart : Normal in transverse diameter. Lung
+    fields : Both lung fields are clear. Bony thorax : Reveals no abnormality. Impression
+    : Normal chest skiagram. a DR. IFFAT 4h. Prepared By :: MBBS, FCPS (Radiology
+    & Imaging) Siocon aeaek Assistant Professor National Heart Fundation Hospital,
+    Dhaka Consultant Labaid Mirpur.'
+  - 'Customer Service 01766662888 LAB LABAID. LTD. (DIAGNOSTIC), MIRPUR AID LTD IOUT
+    HAEMATOLOGY REPORT IAIN AA Invoice No :P2104256170 Invoice Date : 30/04/21 Delivery
+    Date ; 01/05/21 Report No : 122104484352 Patient Name : MS. NAFISA KABIR Age:
+    rs Gender : Female Address H Contact No. : 01711738854 Referred By :DR.MABASET
+    MBBS. C.C.D(BIRDEM :122104627695 | Sample : WHOLE BLOOD LAB. N Tests —: TC/DC/HB%/ESR/PCV/PLATELETS
+    COUNT-PMCT Sample Collected:30/04/21 12:37 pm Sample Received: 30/04/21 02:21
+    pm Test Result Reference Value Haemoglobin ; 11.8 g/dL F 11.5 - 15.5, M 13.5 -
+    18.0 g/dL ESR (Westergren Method) 29 mm in 1st hour M <10 mm in 1st hour, L F<20
+    mm in 1st hour Total Count Red Blood Cells 441 X1012/L F3.8-4.8,M4.5-5.5 X10%12/L
+    Platelets 230 X 109/L 150 - 450 X 10°9/L White Blood Cells 5.2 X 1049/L. 04.00
+    - 11.00 X 10*9/L Differential Count Neutrophil 54 % 40-75% Lymphocyte 37 % 20-50%
+    Monocyte 04 % 02-10% Eosinophil 05 % 01-06% Basophil 00 % <01% Red Cell Indices
+    P.C.V. (Hct) 35 % F: 37-47 %,M: 40-52% M.C.V. 84 fL 82 - 100 fL M.C.H. 28 pg 27-32
+    pg M.C.H.C. 33 g/dL 30 - 35 g/dL Powered by: MYSOFT L. 3'
+  - 'Customer Service 01766662888 LAB LABAID LIDA{DIAGNOSTIC), MIRPUR 4 > LTD IATA
+    BIOCHEMISTRY REPORT ION Invoice No: P2104256170 Invoice Date : 30/04/21 Delivery
+    Date ; 04/05/21 Report No : 122104484350 Patient Name : MS. NAFISA KABIR Age:
+    48 Y Gender : Female Address é Contact No. :01711738854 Referred By :DR.MABASET
+    MBBS. C.C.D(BIRDEM Sample : BLOOD LAB. No : 122104627638 (45) Tests: Creatinine
+    Serum, ALT(SGPT) Blood Sample Collected:30/04/21 12:37 pm Sample Received: 30/04/21
+    02:21 pm “Test Ss _ | Result Reference Value ALT (SGPT) 27 U/L Upto 42 U/L Creatinine
+    76 umol/L M: 60 - 130, F: 53 - 120 pmol/L'
+  - 'Customer Service 01766662888 LABAIDLID. DIAGNOSTIC), MIRPUR IONOUONA Invoice
+    No :P2104256170 _Invoice Date : 30/04/21 Patient Name : MS. NAFISA KABIR Address
+    Referred By :DR.MABASET MBBS. C.C.D(BIRDEM “Sample: BLOOD. “LAB. No 1122104627637
+    Tests — : Ferritin Sample Collected:30/04/21 12:37 pm IMMUNOLOGY REPORT " Delivery
+    Date ; 01/08/24 LAB AID LTD INOUE Report No : 122104484367 Gender : Female \ Contact
+    No. :01711738854 \ Age: 48 Y 41) Sample Received: 30/04/21 02:21 pm Test Result
+    © Ferritin : 53.75 ng/ml Method: Instrument: Automated Chemiluminescence Immunoassay
+    Liaison DiaSorin, Italy, Advia Centaur CP Ec x= i ~ Reference Value Adult Male
+    : 25 - 350 ng/ml Adult Female : 13 - 332 ng/ml'
+  - 'Contomer Serve OF 766662888 LAB LABAID ID DIAGNOSTIC), MIRPUR A f p LTD WUT SEROLOGY
+    REPORT a twee No | 29047255170 inyoine Date . SODErZT Delivery Date . o1/08/91
+    ReportNo ''2¢210aeees3% Pahett Name M5. NAFISA KABIR Age: 4ay Gender | Fomate
+    Address : Contact No : 09711796866 Reterred By (OR, MABASET MBBS. C.C D/RIRDEM
+    Damiple | BLOOD LAB No | 12210an 27095 ah Vests, O.Diner Sample Collected;30/04/91
+    12 37 pm Sample Received: 30/04/21 02 21 pm Test Result Reference Value b —_D-Dimer
+    0.37 yg FEU/mL < 0.5 ug FEUImt oo (FEU = Fibrinogen Equivalent) - Method immunoturbidimetric
+    assay c Instrument: Cobas c 501, Germany } |'
+  - 'Customer Service 01766662888 LABAIDTID. (DIAGNOSTIC), MIRPUR IMATE HAEMATOLOGY
+    REPORT Invoice No =: P2104253562 Invoice Date : 10/04/21 Delivery Date : 10/04/21
+    Patient Name : MS. NAFISA KABIR Age: 50 Y _ Address Referred By :DR.NANDO DULAL
+    SAHA MBBS, BCS, PGT A i AMAT Report No : 122104479630 Gender : Female Contact
+    No. : 01711738854 “Sample 3 WHOLE BLOOD LAB. No 2122104622105 Tests — : TC/DC/HB%/ESR/PCV/PLATELETS
+    COUNT-PMCT | Sample Collected:10/04/21 10:59 am Sample Received: 10/04/21 11:12
+    am Test Result Reference Value e Haemoglobin iz 4 7 10.8 g/dL F 11.5 - 15.5, M
+    13.5 - 18.0 g/dL ESR (Westergren Method) 38 mm in 1st hour M <10 mm in 1st hour,
+    1a F<20 mm in 1st hour Total Count Red Blood Cells 3.8 X 10912/L F3.8-4.8,M4.5-5.5
+    X 1012/L Platelets 225 X 10°9/L 150 - 450 X 10*9/L White Blood Cells 5.4 X 10°9/L
+    04.00 - 11.00 X 1049/L Differential Count — Neutrophil 51% 40-75 % Lymphocyte
+    37 % 20-50% Monocyte 04 % 02 - 10 % Eosinophil == Mad "08 % 01-06 % Zz Basophil
+    00 % <01% ities CCC 2 P.C.V. (Hct) 32 % F: 37-47%, M: 40-52% a Cf aosemease ae
+    TOOT M.C.H. : rns hy ; 28 pg 27 - 32 pg “M.C.H.C. Wien =. ~ 34 g/dL 30 - 35 g/dL
+    ry 2 2 s > > g H 4 5'
+  expect:
+    patient_name: MS. NAFISA KABIR
+    patient_age: 48 Y
+    patient_gender: Female
+    tests:
+    - name: Haemoglobin
+      value: 11.8 g/dL
+    - name: ESR (Westergren Method)
+      value: 29 mm in 1st hour
+    - name: Red Blood Cells
+      value: 4.1 X 10^12/L
+    - name: Platelets
+      value: 230 X 10^9/L
+    - name: White Blood Cells
+      value: 5.2 X 10^9/L
+    - name: Neutrophil
+      value: 54%
+    - name: Lymphocyte
+      value: 37%
+    - name: Monocyte
+      value: 04%
+    - name: Eosinophil
+      value: 05%
+    - name: Basophil
+      value: 00%
+    - name: P.C.V. (Hct)
+      value: 35%
+    - name: M.C.V.
+      value: 84 fL
+    - name: M.C.H.
+      value: 28 pg
+    - name: M.C.H.C.
+      value: 33 g/dL
+    - name: ALT (SGPT)
+      value: 27 U/L
+    - name: Creatinine
+      value: 76 µmol/L
+    - name: Ferritin
+      value: 53.75 ng/ml
+    - name: D-Dimer
+      value: 0.37 µg FEU/mL
+- id: urine
+  pages:
+  - 'Zz x 3 a = rm 3 > = = a =) 8 3 @ 166 766662888 AID LTD. (DIAGNOSTICS), MIRPUR
+    nse No: 04-40767 | Reg. Code: HSM08752 LA3AiD Diagnostics «Home of Trust Referred
+    By :SELF IO URINE ROUTINE EXAMINATION ___IIIIDMIINVIIIINIIII Invoice No —_: P2110289470
+    Invoice Date : 21/10/21 Delivery Date ; 22/10/24 Report No :122110547194 Patient
+    Name : NAFISA KABIR Age: 50 Y Gender : Female Address Contact No. : 01711738854
+    Sample : URINE LAB. No :122110702310 Tests; Urine RIWE Sample Collected:21/10/21
+    06:57 pm Sample Received: 21/10/21 08:11 pm PHYSICAL EXAMINATION MICROSCOPIC EXAMINATIOIN
+    Quantity Sufficient CELLS /HPF Colour Straw RBC Nil Appearance Clear Pus Cells
+    0-2 Sediment Nil Epithelial Cells 0-2 CHEMICAL EXAMINATION CASTS/LPF Reaction
+    Acidic RBC Nil Albumin Nil WBC Nil Sugar Nil Epithelial Nil Ex. Phosphate Nil
+    Granular Nil Hyaline Nil ON REQUEST CRYSTALS & OTHERS Bile Salt Not Done Urates
+    Nil Bile Pigment Not Done Uric Acid Nil Ketones Not Done Cal. Oxalate Nil Urobilinogen
+    Not Done Amor. Phos Nil B.J. Protein Not Done Triple Phos Nil Candida Nil A wan'
+  - 'A s medical health services itd, + OOOOH URINE EXAMINATION REPORT _BIMIIINIIVNUIININNN
+    Invoice No 212110023425 Invoice Date : 14/10/21 Delivery Date ; 15/10/21 Report
+    No : 12110021096 Patient Name :MRS. NAFISA KABI Age : 50Y Gender : Female i Referred
+    By :SELF 2 <x Sample : URINE LAB. No : 12110026334 Tests: Urine R/W/E Test [ Result
+    Reference Value Physical Examination Colour Straw Appearance Clear Sediment Nil
+    Chemical Examination Albumin Nil Glucose Nil Microscopic Examination Epithelial
+    Cells 3-4/HPF Pus Cells/WBC 5-7/HPF Red Blood Cells (RBC) Nil Granular Cast Nil
+    _ Cellular Cast / WBC Cast Nil I RBC Cast Nil Hyaline Cast : Nil Calcium Oxalate
+    Nil Uric acid Crystal Nil Amorphous Phosphate Nil s Triple phosphate Nil Trichomonas
+    Vaginalis Nil Rm Yeast / Candida Nil 8 Spermatozoa Nil = ir % 2 s a “4 c-3 a @
+    i * ,'
+  - '©81766662888 LA3AiD LABAID LTD. (DIAGNOSTICS), MIRPUR Diagnostics License No:
+    04-40767 | Reg. Code: HSMOS752 -Home of Trust Ns ean: 3 a fo) 2) > = s a v 2 o
+    s 6 a ONL USG 3D/4D REPORT OAONLO EU Invoice No : P2109282427 Invoice Date : 21/09/2021
+    Delivery Date : 22/09/2021 Report No. : 2109186237 Patient Name: MS. NAFISA KABIR
+    Age : 50 Y Gender : F [Ref. Doctor : DR. MD. AKMAT ALI MBBS, MD(HEPATOLOGY) Test
+    Name : USG OF WHOLE ABDOMEN 4D Thank you for this referral. SUMMARY OF FINDINGS
+    LIVER: Normal in size (13.1 cm). Hepatic parenchymal echotexture is uniform with
+    no focal abnormality. Intrahepatic portion of IVC is normal. Portal vein is normal.
+    Porta-hepatis is normal. GALL BLADDER: Normal in size and contour. Wall thickness
+    is within normal limit. No evidence of echogenic structure or biliary sludge is
+    seen within the lumen. Intrahepatic biliary radicals and common ducts are not
+    dilated. PANCREAS: Normal in size. Parenchymal echotexture is homogeneous. Main
+    pancreatic duct is not dilated. f SPLEEN: Normal in size. Parenchymal echotexture
+    is homogeneous. Spleno-portal venous system is not dilated. KIDNEYS: Both kidneys
+    are normal in size (RK= 9.2 cm & LK = 10.0 cm), shape and position with well defined
+    cortex and medulla & normal cortical echogenecity. Pelvi-calyceal systems are
+    not dilated. No mass, cyst or calculus is seen in either sides. URINARY BLADDER:
+    Well filled and regular in outline, no wall thickening is seen. No demonstrable
+    intravesical lesion is seen. UTERUS: Atrophied (normal for her age). ADNEXA :
+    Unremarkable. COMMENT: Normal sonographic findings of visible organs of abdomen.
+    por Prepared By :: : ee Md. Babel MBBS (OU), MPH (OU) Advance Traning in TVS &
+    PGT Ultrasonoigram Thomas Jefferson University'
+  - 'ae Se on y NAFISA Exam Date: 21.09.2021 8:57:30 PM'
+  expect:
+    patient_name: Mrs. Nafisa Kabir
+    patient_age: 50 years
+    patient_gender: Female

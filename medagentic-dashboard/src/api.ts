@@ -7,6 +7,11 @@ const API = (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
 // Absolute URL to stream a document's original file (citations / docs table "Open").
 export const docFileUrl = (id: string | number) => `${API}/api/documents/${id}/file`;
 
+// Backend emits a root-relative report path (/api/chat/report/<id>.pdf). The dev
+// server runs on a different origin than the API, so prefix the API base.
+export const apiUrl = (path: string) =>
+  path.startsWith('http') ? path : `${API}${path}`;
+
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json' },

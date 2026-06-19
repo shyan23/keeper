@@ -1,25 +1,42 @@
-# Medical Document Intelligence & Tracker
+# MedAgentic - Medical Document Intelligence & Tracker
 
-An agentic system that turns a pile of scanned medical reports into a queryable,
-patient-centric record. Upload a photo or PDF of a lab report, prescription, or
-imaging study; the agent runs OCR, splits multi-report scans, extracts structured
-medical data, resolves the patient (with a human approval gate), indexes the text
-for semantic search, and then answers natural-language questions over each
-patient's history with citations back to the source document.
+MedAgentic is a production-minded, agentic healthcare records system that turns
+messy scanned medical documents into a queryable, patient-centric timeline.
+Upload a photo or PDF of a lab report, prescription, or imaging study; the agent
+runs OCR, splits multi-report scans, extracts structured medical data, resolves
+the patient through a human approval gate, indexes the text for semantic search,
+charts clinical trends, and generates source-backed answers or PDF summaries.
 
 Built on **LangGraph** (stateful agent), **FastAPI** (backend), **Postgres +
 pgvector** on Supabase (storage + vector search), **Redis** (cache), and a
-**Vite/TypeScript** dashboard. Designed to run entirely on a local machine with a
-CPU-only OCR path and a cloud→local LLM fallback chain.
+polished **Vite/TypeScript** dashboard. It is designed to run on a local machine
+with CPU-only OCR, resilient provider fallback, and explicit human-in-the-loop
+controls for clinical safety.
+
+**Recruiter quick scan**
+
+- End-to-end AI product: OCR ingestion, LangGraph orchestration, RAG retrieval,
+  human review, data visualization, and PDF report generation.
+- Safety-first workflow: no extracted record, edit, weak answer, or generated
+  report is accepted blindly; users review and approve sensitive actions.
+- Real backend depth: SQLAlchemy models, Alembic migrations, pgvector search,
+  Redis caching, SSE streaming, deduplication, and a broad pytest suite.
+- Product polish: provider-style dashboard, patient cohort navigation, grouped
+  clinical records, trend charts, source document links, and chat-native actions.
+- Local-first resilience: Tesseract OCR and Ollama fallback keep the core system
+  usable even when cloud providers or Redis are unavailable.
 
 ---
 
 ## Table of contents
 
+- [Product showcase](#product-showcase)
+- [Why it stands out](#why-it-stands-out)
 - [Architecture](#architecture)
 - [The agent graph](#the-agent-graph)
 - [Ingestion pipeline](#ingestion-pipeline)
 - [RAG query pipeline](#rag-query-pipeline)
+- [PDF report generation](#pdf-report-generation)
 - [LLM provider strategy](#llm-provider-strategy)
 - [Data model](#data-model)
 - [Human-in-the-loop](#human-in-the-loop-hitl)
@@ -29,6 +46,63 @@ CPU-only OCR path and a cloud→local LLM fallback chain.
 - [Tests](#tests)
 - [Project layout](#project-layout)
 - [Operational notes](#operational-notes)
+
+---
+
+## Product showcase
+
+The dashboard is built as a real clinical work surface: patient list on the
+left, longitudinal records in the center, and the agentic assistant on the right.
+
+![MedAgentic provider dashboard showing a patient timeline and agent response](README_STUFF/dashboard.png)
+
+### Human review before persistence
+
+Multi-report uploads are split into dated document cards. The reviewer can fix
+the patient name, report title, date, and extracted findings before anything is
+saved.
+
+![Human-in-the-loop extraction review with editable report fields](README_STUFF/human_in_the_loop.png)
+
+### Duplicate detection
+
+Files are hashed before OCR or LLM work. Re-uploading the same document exits
+early and tells the user it was skipped.
+
+![Duplicate upload skipped by the agent](README_STUFF/dedup.png)
+
+### Clinical trends
+
+Extracted test results become chartable data, so a provider can inspect metric
+changes across years instead of reading every PDF manually.
+
+![Trend chart for an extracted lab metric](README_STUFF/Trend.png)
+
+### Human-approved PDF generation
+
+The same chat interface can plan a patient-specific report, ask for approval,
+and generate a downloadable PDF with matching documents, charts, and
+attachments.
+
+![Human-in-the-loop approval card for a PDF report plan](README_STUFF/human_in_the_loop_pdf.png)
+
+![Report-ready card showing generated PDF pages, charts, and attachments](README_STUFF/pdf_generation.png)
+
+## Why it stands out
+
+- **Agentic, not just a chat wrapper.** The LangGraph state machine routes
+  between ingest, structured browse, RAG answers, edits, and report generation.
+- **Clinical safety is part of the architecture.** Interrupt nodes pause the
+  graph for reviewer decisions instead of burying risk in a prompt.
+- **Documents become structured data.** Scans are converted into patients,
+  dated documents, entities, test results, semantic chunks, and trendable
+  metrics.
+- **The UI proves the workflow.** Users can upload, review, browse, chart, ask,
+  open source files, delete records, and download generated reports from one
+  dashboard.
+- **Failure modes are handled deliberately.** Duplicate files skip expensive
+  work, Redis degrades to cache misses, cloud LLMs fall back to local models,
+  and weak retrieval triggers a confidence gate.
 
 ---
 
@@ -113,6 +187,7 @@ flowchart TD
     ROUTER -->|structured_query| PF["parse_filters"]
     ROUTER -->|rag_query| RP["require_patient"]
     ROUTER -->|edit| PE["plan_edit"]
+    ROUTER -->|generate_pdf| REP["plan_report"]
 
     %% Ingest chain
     DEDUP -->|duplicate| ENDX([END])
@@ -132,6 +207,14 @@ flowchart TD
     PE -->|target found| CE{{"confirm_edit<br/>⏸ HITL"}}
     PE -->|none| ENDX
     CE --> ENDX
+
+    %% Report chain
+    REP --> CR{{"confirm_report<br/>HITL"}}
+    CR -->|approved| BR["build_report"]
+    CR -->|rejected| ENDX
+    BR --> DR{{"deliver_report<br/>HITL"}}
+    DR -->|download| ENDX
+    DR -->|regenerate| BR
 
     %% RAG chain
     RP --> TQ["transform_query (HyDE)"]
@@ -153,10 +236,11 @@ emits an `interrupt` event, and the run only continues when the client POSTs to
 
 | Intent | Trigger | Sub-chain |
 |---|---|---|
-| `ingest` | a file is attached (always wins), or the LLM classifies it so | OCR → segment → extract → resolve patient → confirm → persist |
-| `structured_query` | "latest report of Jane", "show prescriptions for Bob" | parse filters → DB query → document chips |
-| `rag_query` | a content question: "what did the doctor say about her BP?" | HyDE → retrieve → rerank → grade → (CRAG correct) → answer |
-| `edit` | "set hemoglobin to 1.2", "correct the report date to 5 Oct 2023" | plan edit → confirm → write |
+| `ingest` | a file is attached (always wins), or the LLM classifies it so | OCR -> segment -> extract -> resolve patient -> confirm -> persist |
+| `structured_query` | "latest report of Jane", "show prescriptions for Bob" | parse filters -> DB query -> document chips |
+| `rag_query` | a content question: "what did the doctor say about her BP?" | HyDE -> retrieve -> rerank -> grade -> (CRAG correct) -> answer |
+| `edit` | "set hemoglobin to 1.2", "correct the report date to 5 Oct 2023" | plan edit -> confirm -> write |
+| `generate_pdf` | "make a PDF of all haematology reports from 2021 to 2024" | plan report -> approve -> build PDF -> download or regenerate |
 
 Routing is LLM-classified (`app/agent/router.py`) except for the hard rule that a
 pending file upload is always an ingest.
@@ -266,6 +350,28 @@ flowchart LR
 
 ---
 
+## PDF report generation
+
+Report generation turns a natural-language request into a reviewed export plan.
+The agent identifies the patient, filters matching documents by report type and
+date range, presents the plan for approval, then builds a downloadable PDF with
+the selected clinical records, charts, and source attachments. After generation,
+the delivery card shows the page, chart, and attachment counts and lets the user
+download or regenerate the report.
+
+The flow mirrors the rest of the safety model:
+
+- **Plan first.** The UI shows the patient, date range, matching documents, and
+  document count before generation.
+- **Human approval.** The report is only produced after the user approves the
+  plan.
+- **Auditable output.** Generated reports keep source context by including the
+  selected documents and chart summaries.
+- **Delivery gate.** The final step exposes the generated PDF and supports
+  regeneration without restarting the request.
+
+---
+
 ## LLM provider strategy
 
 Chat, vision, and embeddings are each resolved independently. Chat uses an
@@ -365,17 +471,20 @@ source text span that justified the extraction. Schema is managed by Alembic
 
 ## Human-in-the-loop (HITL)
 
-Three points pause the graph for a human decision. Each is a LangGraph
+Five points pause the graph for a human decision. Each is a LangGraph
 `interrupt(...)`; the run resumes via `/api/chat/resume`.
 
 | Gate | Node | The human decides |
 |---|---|---|
 | Ingest review | `confirm_ingest` | approve/reject; edit each report's patient, type, date, and entities; resolve patient ambiguity |
-| Edit verify | `confirm_edit` | approve a current→proposed value change before any DB write |
+| Edit verify | `confirm_edit` | approve a current->proposed value change before any DB write |
 | Low-confidence answer | `confirm_low_confidence` | whether to answer from weak retrieval, or decline |
+| Report plan | `confirm_report` | approve/cancel/modify a PDF export plan before generation |
+| Report delivery | `deliver_report` | download the finished PDF or regenerate it |
 
 No document is persisted, no extracted value is changed, and no shaky answer is
-emitted without explicit human approval.
+emitted without explicit human approval. Report exports follow the same pattern:
+the user sees the selected records before the PDF is generated.
 
 ---
 

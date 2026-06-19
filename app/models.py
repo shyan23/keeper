@@ -83,7 +83,7 @@ class TestResult(Base):
     __tablename__ = "test_result"
     id: Mapped[int] = mapped_column(primary_key=True)
     medical_test_id: Mapped[int] = mapped_column(ForeignKey("medical_test.id", ondelete="CASCADE"), index=True)
-    value: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)  # imaging findings store long narratives here
     unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
     reference_range: Mapped[str | None] = mapped_column(String(120), nullable=True)
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
