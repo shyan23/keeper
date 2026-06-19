@@ -25,10 +25,10 @@ class GeminiChat:
                                            google_api_key=s.gemini_api_key, temperature=0)
         self._inner = inner
 
-    def complete(self, prompt: str, config=None) -> str:
+    def complete(self, prompt: str, config: dict | None = None) -> str:
         return self._inner.invoke(prompt, config=config).content
 
-    def structured(self, prompt: str, schema: type[BaseModel], config=None) -> BaseModel:
+    def structured(self, prompt: str, schema: type[BaseModel], config: dict | None = None) -> BaseModel:
         return self._inner.with_structured_output(schema).invoke(prompt, config=config)
 
 
@@ -75,10 +75,10 @@ class OllamaChat:
             inner = ChatOllama(model=s.ollama_model, base_url=s.ollama_host, temperature=0)
         self._inner = inner
 
-    def complete(self, prompt: str, config=None) -> str:
+    def complete(self, prompt: str, config: dict | None = None) -> str:
         return self._inner.invoke(prompt, config=config).content
 
-    def structured(self, prompt: str, schema: type[BaseModel], config=None) -> BaseModel:
+    def structured(self, prompt: str, schema: type[BaseModel], config: dict | None = None) -> BaseModel:
         return self._inner.with_structured_output(schema).invoke(prompt, config=config)
 
 
@@ -221,7 +221,7 @@ class FallbackChat:
     def __init__(self, providers: list):
         self._providers = [p for p in providers if p is not None]
 
-    def complete(self, prompt: str, config=None) -> str:
+    def complete(self, prompt: str, config: dict | None = None) -> str:
         last = None
         for p in self._providers:
             try:
@@ -231,7 +231,7 @@ class FallbackChat:
                 last = e
         raise RuntimeError(f"all chat providers failed: {last}")
 
-    def structured(self, prompt: str, schema: type[BaseModel], config=None) -> BaseModel:
+    def structured(self, prompt: str, schema: type[BaseModel], config: dict | None = None) -> BaseModel:
         last = None
         for p in self._providers:
             try:

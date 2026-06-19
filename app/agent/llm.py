@@ -40,10 +40,10 @@ class GroqChat:
                                               max_tokens=4096)
         return self._structured_inner
 
-    def complete(self, prompt: str, config=None) -> str:
+    def complete(self, prompt: str, config: dict | None = None) -> str:
         return self._chat_client().invoke(prompt, config=config).content
 
-    def structured(self, prompt: str, schema: type[BaseModel], config=None) -> BaseModel:
+    def structured(self, prompt: str, schema: type[BaseModel], config: dict | None = None) -> BaseModel:
         from app.agent.schema import to_strict_schema
         from app.agent.structured import validate_and_retry
 
