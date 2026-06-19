@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from langgraph.types import interrupt
+
 from app.agent.state import IntentDecision
 
 CLARIFY_BELOW = 0.80
@@ -10,6 +12,22 @@ CONFIRM_BELOW = 0.90
 _FALLBACK_QUESTION = (
     "I'm not sure what you'd like me to do — should I look something up, "
     "change a value, or make a report?")
+
+INTENT_ENTRY = {
+    "ingest": "dedup_check",
+    "structured_query": "parse_filters",
+    "rag_query": "require_patient",
+    "edit": "plan_edit",
+    "generate_pdf": "plan_report",
+}
+
+_INTENT_SUMMARY = {
+    "ingest": "read and store the attached document",
+    "structured_query": "look up a specific record",
+    "rag_query": "answer a question from the document contents",
+    "edit": "change an extracted value",
+    "generate_pdf": "build a PDF report",
+}
 
 _PROMPT = """You are routing a medical-records assistant. Classify the user's
 latest request into exactly one intent, given the recent conversation.
@@ -57,3 +75,18 @@ def classify_intent(state: dict[str, Any], config: dict[str, Any]) -> dict[str, 
 
     gate = "confirm" if decision.confidence < CONFIRM_BELOW else "go"
     return {"intent": decision.intent, "route_gate": gate}
+
+
+def confirm_intent_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Gate for medium-confidence (0.80-0.90) routing. Approve -> run the chain,
+    reject -> ask the user to rephrase."""
+    intent = state.get("intent") or "rag_query"
+    decision = interrupt({
+        "type": "confirm_intent",
+        "intent": intent,
+        "summary": _INTENT_SUMMARY.get(intent, intent),
+    })
+    if decision.get("approve"):
+        return {"route_gate": "go", "intent": intent}
+    return _say(state, "No problem — could you rephrase what you'd like me to do?",
+                intent="clarify", route_gate="clarify")

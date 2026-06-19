@@ -58,3 +58,29 @@ def test_router_low_confidence_synthesizes_question_when_missing():
         IntentDecision(intent="rag_query", confidence=0.1, question=None))))
     assert out["route_gate"] == "clarify"
     assert out["messages"][-1]["content"]  # non-empty fallback question
+
+
+def test_confirm_intent_approve(monkeypatch):
+    import app.agent.router as router
+    monkeypatch.setattr(router, "interrupt", lambda payload: {"approve": True})
+    state = {"messages": [{"role": "user", "content": "show jane"}],
+             "intent": "structured_query"}
+    out = router.confirm_intent_node(state, _cfg(_FakeChat(IntentDecision(intent="rag_query"))))
+    assert out["route_gate"] == "go"
+    assert out["intent"] == "structured_query"
+
+
+def test_confirm_intent_reject(monkeypatch):
+    import app.agent.router as router
+    monkeypatch.setattr(router, "interrupt", lambda payload: {"approve": False})
+    state = {"messages": [{"role": "user", "content": "show jane"}],
+             "intent": "structured_query"}
+    out = router.confirm_intent_node(state, _cfg(_FakeChat(IntentDecision(intent="rag_query"))))
+    assert out["route_gate"] == "clarify"
+    assert out["messages"][-1]["role"] == "assistant"
+
+
+def test_intent_entry_covers_all_intents():
+    from app.agent.router import INTENT_ENTRY
+    assert set(INTENT_ENTRY) == {
+        "ingest", "structured_query", "rag_query", "edit", "generate_pdf"}
