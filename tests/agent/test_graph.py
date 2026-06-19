@@ -2,7 +2,7 @@ import uuid
 from langgraph.types import Command
 
 from app.agent.graph import build_graph
-from app.agent.state import Deps, ExtractionResult, ExtractedEntity
+from app.agent.state import Deps, ExtractionResult, ExtractedEntity, IntentDecision
 
 
 class _FakeChat:
@@ -18,6 +18,10 @@ class _FakeChat:
                 patient_name="Graph Pt", doc_type="prescription",
                 diseases=[ExtractedEntity(name="flu", confidence=0.9, source_span="flu")],
             )
+        if schema is IntentDecision:
+            valid = {"ingest", "structured_query", "rag_query", "edit", "generate_pdf"}
+            intent = self._label if self._label in valid else "rag_query"
+            return IntentDecision(intent=intent, confidence=0.95)
         return schema()
 
 
@@ -114,3 +118,40 @@ def test_graph_has_report_nodes():
     nodes = set(g.get_graph().nodes)
     for n in ["plan_report", "confirm_report", "build_report", "deliver_report"]:
         assert n in nodes
+
+
+def test_graph_clarify_ends_turn():
+    from app.agent.graph import build_graph
+    from app.agent.state import Deps, IntentDecision
+
+    class _Chat:
+        def complete(self, p): return ""
+        def structured(self, p, s):
+            return IntentDecision(intent="rag_query", confidence=0.2,
+                                  question="What would you like?")
+
+    deps = Deps(chat=_Chat(), vision=None, embedder=None, session_factory=None)
+    g = build_graph()
+    state = {"messages": [{"role": "user", "content": "do the thing"}]}
+    out = g.invoke(state, {"configurable": {"deps": deps, "thread_id": "t1"}})
+    assert out["messages"][-1]["content"] == "What would you like?"
+    assert out.get("answer") == "What would you like?"
+
+
+def test_graph_mid_confidence_interrupts_confirm_intent():
+    from app.agent.graph import build_graph
+    from app.agent.state import Deps, IntentDecision
+
+    class _Chat:
+        def complete(self, p): return ""
+        def structured(self, p, s):
+            return IntentDecision(intent="structured_query", confidence=0.85)
+
+    deps = Deps(chat=_Chat(), vision=None, embedder=None, session_factory=None)
+    g = build_graph()
+    cfg = {"configurable": {"deps": deps, "thread_id": "t2"}}
+    g.invoke({"messages": [{"role": "user", "content": "show jane"}]}, cfg)
+    snap = g.get_state(cfg)
+    assert snap.next  # interrupted, not finished
+    interrupts = [i for t in snap.tasks for i in t.interrupts]
+    assert interrupts and interrupts[0].value["type"] == "confirm_intent"

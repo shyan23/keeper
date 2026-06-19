@@ -3,7 +3,7 @@ from __future__ import annotations
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.router import classify_intent
+from app.agent.router import classify_intent, confirm_intent_node, INTENT_ENTRY
 from app.agent.state import AgentState
 from app.agent.nodes.ingest import (
     confirm_ingest_node, dedup_check_node, extract_text_node, persist_reports_node,
@@ -21,6 +21,11 @@ from app.agent.nodes.report import (
 
 
 def _route(state: AgentState) -> str:
+    gate = state.get("route_gate") or "go"
+    if gate == "clarify":
+        return "clarify"
+    if gate == "confirm":
+        return "confirm"
     return state.get("intent") or "rag_query"
 
 
@@ -38,6 +43,7 @@ def build_graph(checkpointer=None):
     g = StateGraph(AgentState)
 
     g.add_node("router", classify_intent)
+    g.add_node("confirm_intent", confirm_intent_node)
     # ingest
     g.add_node("dedup_check", dedup_check_node)
     g.add_node("extract_text", extract_text_node)
@@ -68,12 +74,14 @@ def build_graph(checkpointer=None):
 
     g.add_edge(START, "router")
     g.add_conditional_edges("router", _route, {
-        "ingest": "dedup_check",
-        "structured_query": "parse_filters",
-        "rag_query": "require_patient",
-        "edit": "plan_edit",
-        "generate_pdf": "plan_report",
+        "clarify": END,
+        "confirm": "confirm_intent",
+        **INTENT_ENTRY,
     })
+    g.add_conditional_edges("confirm_intent",
+                            lambda s: "clarify" if s.get("route_gate") == "clarify"
+                            else (s.get("intent") or "rag_query"),
+                            {"clarify": END, **INTENT_ENTRY})
 
     g.add_edge("require_patient", "transform_query")
 
