@@ -32,7 +32,8 @@ class GroqChat:
             from langchain_groq import ChatGroq
             s = get_settings()
             self._structured_inner = ChatGroq(model=s.groq_structured_model,
-                                              api_key=s.groq_api_key, temperature=0)
+                                              api_key=s.groq_api_key, temperature=0,
+                                              max_tokens=8192)
         return self._structured_inner
 
     def complete(self, prompt: str) -> str:
@@ -46,10 +47,14 @@ class GroqChat:
         client = self._structured_client()
 
         if model in self.STRICT_MODELS:
-            # Constrained decoding: tokens forced to the schema, no truncation.
+            # Constrained decoding. Drop defaulted metadata fields: source_span
+            # echoes document text per item, and being strict-required it bloats
+            # output until long multi-report docs exceed the token budget (-> 400).
+            # No-op for schemas without these fields. Pydantic restores defaults.
             rf = {"type": "json_schema",
                   "json_schema": {"name": schema.__name__, "strict": True,
-                                  "schema": to_strict_schema(schema)}}
+                                  "schema": to_strict_schema(
+                                      schema, drop={"source_span", "confidence"})}}
             raw = client.bind(response_format=rf).invoke(prompt).content
             return schema.model_validate_json(raw)
 
