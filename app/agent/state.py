@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -82,6 +82,12 @@ class ExtractionResult(BaseModel):
         return out
 
 
+class IntentDecision(BaseModel):
+    intent: Literal["ingest", "structured_query", "rag_query", "edit", "generate_pdf"]
+    confidence: float = 0.5          # 0..1, LLM self-rated
+    question: str | None = None      # clarifying question, set when ambiguous
+
+
 # ---- Client protocols (injected; fakes in tests) ----
 
 class Embedder(Protocol):
@@ -150,3 +156,4 @@ class AgentState(TypedDict, total=False):
     corrected: bool
     low_confidence: bool
     grade_score: float
+    route_gate: str | None    # "go" | "confirm" | "clarify"

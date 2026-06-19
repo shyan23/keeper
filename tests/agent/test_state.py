@@ -18,3 +18,18 @@ def test_extraction_result_roundtrip():
 def test_agent_state_is_typeddict():
     st: AgentState = {"messages": [], "intent": None}
     assert st["intent"] is None
+
+
+def test_intent_decision_defaults():
+    from app.agent.state import IntentDecision
+    d = IntentDecision(intent="rag_query")
+    assert d.confidence == 0.5
+    assert d.question is None
+
+
+def test_intent_decision_rejects_bad_intent():
+    import pytest
+    from pydantic import ValidationError
+    from app.agent.state import IntentDecision
+    with pytest.raises(ValidationError):
+        IntentDecision(intent="not_a_real_intent")
