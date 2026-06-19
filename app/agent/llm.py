@@ -9,29 +9,60 @@ from app.config import get_settings
 
 
 class GroqChat:
-    def __init__(self, inner=None):
-        if inner is None:
+    # Strict json_schema (constrained decoding) is only available on these Groq
+    # models; everything else falls back to best-effort json_object + retry.
+    STRICT_MODELS = {"openai/gpt-oss-120b", "openai/gpt-oss-20b"}
+
+    def __init__(self, inner=None, structured_inner=None):
+        # Both clients are lazy: complete()-only callers never build the gpt-oss
+        # structured client, and vice-versa.
+        self._inner = inner
+        self._structured_inner = structured_inner
+
+    def _chat_client(self):
+        if self._inner is None:
             from langchain_groq import ChatGroq
             s = get_settings()
-            inner = ChatGroq(model=s.groq_model, api_key=s.groq_api_key, temperature=0)
-        self._inner = inner
+            self._inner = ChatGroq(model=s.groq_model, api_key=s.groq_api_key,
+                                   temperature=0)
+        return self._inner
+
+    def _structured_client(self):
+        if self._structured_inner is None:
+            from langchain_groq import ChatGroq
+            s = get_settings()
+            self._structured_inner = ChatGroq(model=s.groq_structured_model,
+                                              api_key=s.groq_api_key, temperature=0)
+        return self._structured_inner
 
     def complete(self, prompt: str) -> str:
-        return self._inner.invoke(prompt).content
+        return self._chat_client().invoke(prompt).content
 
     def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
-        # json_object response_format + schema-in-prompt, parsed manually. Unlike
-        # tool/function binding on Groq llama (which truncated the tests array to
-        # 1 of 25), raw JSON mode returns every item — and in ~3-4s.
-        instructed = (
-            f"{prompt}\n\nReturn ONLY a JSON object — no prose, no code fences — "
-            f"with EVERY item populated, matching this JSON schema:\n"
-            f"{json.dumps(schema.model_json_schema())}"
-        )
-        raw = self._inner.bind(
-            response_format={"type": "json_object"}
-        ).invoke(instructed).content
-        return schema.model_validate_json(raw)
+        from app.agent.schema import to_strict_schema
+        from app.agent.structured import validate_and_retry
+
+        model = get_settings().groq_structured_model
+        client = self._structured_client()
+
+        if model in self.STRICT_MODELS:
+            # Constrained decoding: tokens forced to the schema, no truncation.
+            rf = {"type": "json_schema",
+                  "json_schema": {"name": schema.__name__, "strict": True,
+                                  "schema": to_strict_schema(schema)}}
+            raw = client.bind(response_format=rf).invoke(prompt).content
+            return schema.model_validate_json(raw)
+
+        # Best-effort json_object (e.g. llama-3.3) + self-correcting retry.
+        base = (f"{prompt}\n\nReturn ONLY a JSON object — no prose, no code fences — "
+                f"matching this JSON schema:\n{json.dumps(schema.model_json_schema())}")
+
+        def invoke_raw(extra: str) -> str:
+            return client.bind(
+                response_format={"type": "json_object"}
+            ).invoke(base + extra).content
+
+        return validate_and_retry(invoke_raw, schema)
 
 
 class GroqVision:
