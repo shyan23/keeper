@@ -819,6 +819,20 @@ function interruptCardHtml(payload: any, idx: number) {
         </div>
       </div>`;
   }
+  if (payload.type === 'confirm_intent') {
+    return `
+      <div class="bg-gradient-to-br from-[#F5F4F0] to-[#E9E8E1] rounded-3xl p-5 md:p-6 shadow-lg border border-[#DEDCD6]">
+        <div class="flex items-center gap-2 mb-3 text-[#5D7B6F]">
+          <i data-lucide="help-circle" class="w-3.5 h-3.5"></i>
+          <span class="font-extrabold text-[9px] tracking-widest uppercase">Just checking</span>
+        </div>
+        <p class="text-[13px] text-[#2E2C29] mb-5">I think you want me to ${esc(payload.summary)}. Go ahead?</p>
+        <div class="flex gap-2.5">
+          <button data-act="reject-intent" data-idx="${idx}" class="int-btn flex-1 bg-white border border-[#DFDDDA] text-[#A6A298] hover:text-[#C16D54] py-3 rounded-xl text-xs font-extrabold">No, let me rephrase</button>
+          <button data-act="approve-intent" data-idx="${idx}" class="int-btn flex-[2] bg-gradient-to-br from-[#698A7D] to-[#4F6D61] text-white py-3 rounded-xl text-xs font-extrabold">Yes, go ahead</button>
+        </div>
+      </div>`;
+  }
   // low_confidence
   return `
     <div class="bg-white rounded-3xl p-5 shadow-lg border border-[#DEDCD6]">
@@ -907,6 +921,8 @@ function bindInterruptButtons() {
         resume = t.dataset.act === 'confirm' ? { approved: true } : { approved: false };
       } else if (payload.type === 'confirm_delivery') {
         resume = t.dataset.act === 'regenerate' ? { regenerate: true } : { approved: true };
+      } else if (payload.type === 'confirm_intent') {
+        resume = t.dataset.act === 'approve-intent' ? { approve: true } : { approve: false };
       } else {
         resume = { proceed: t.dataset.act === 'proceed' };
       }
