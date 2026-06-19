@@ -235,6 +235,11 @@ class PrescriptionVision:
     def __init__(self, tesseract: TesseractVision, gemini=None):
         self._tess = tesseract
         self._gemini = gemini
+        # Set True when a handwriting page wanted Gemini but Gemini errored, so the
+        # caller can refuse to cache the degraded Tesseract fallback. Reset per-doc
+        # by extraction._extract_raw. ponytail: shared instance, single-user app —
+        # fine; make per-call if this ever serves concurrent ingests.
+        self.gemini_failed = False
 
     def ocr_image(self, data: bytes, mime: str) -> str:
         from app.services.handwriting import looks_like_handwriting
@@ -245,6 +250,7 @@ class PrescriptionVision:
             try:
                 return self._gemini.ocr_image(data, mime)
             except Exception as e:  # noqa: BLE001 - paid path is best-effort
+                self.gemini_failed = True
                 log.warning("Gemini prescription OCR failed, keeping Tesseract: %s", e)
         return text
 
