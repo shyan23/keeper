@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from app.cache import get_or_set, make_key
 from app.config import get_settings
-
+from langchain_ollama import OllamaEmbeddings
 
 class OllamaEmbedder:
     """Wraps langchain_ollama.OllamaEmbeddings; `inner` injectable for tests."""
 
     def __init__(self, inner=None):
         if inner is None:
-            from langchain_ollama import OllamaEmbeddings
             s = get_settings()
             inner = OllamaEmbeddings(model=s.ollama_embed_model, base_url=s.ollama_host)
             self._model = s.ollama_embed_model

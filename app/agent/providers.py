@@ -1,14 +1,17 @@
 from __future__ import annotations
-
 import logging
 from typing import Any
-
+from PIL import Image, ImageFilter, ImageOps
 from pydantic import BaseModel
-
+import io
 from app.agent.embeddings import OllamaEmbedder
 from app.agent.llm import GroqChat, GroqVision
 from app.config import get_settings
-
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_ollama import ChatOllama
+import pytesseract
+import base64
 log = logging.getLogger(__name__)
 
 
@@ -17,7 +20,6 @@ log = logging.getLogger(__name__)
 class GeminiChat:
     def __init__(self, inner=None):
         if inner is None:
-            from langchain_google_genai import ChatGoogleGenerativeAI
             s = get_settings()
             inner = ChatGoogleGenerativeAI(model=s.gemini_model, max_retries=0,
                                            google_api_key=s.gemini_api_key, temperature=0)
@@ -33,7 +35,6 @@ class GeminiChat:
 class GeminiVision:
     def __init__(self, inner=None):
         if inner is None:
-            from langchain_google_genai import ChatGoogleGenerativeAI
             s = get_settings()
             inner = ChatGoogleGenerativeAI(model=s.gemini_vision_model, max_retries=0,
                                            google_api_key=s.gemini_api_key, temperature=0)
@@ -55,7 +56,6 @@ class GeminiVision:
 class GeminiEmbedder:
     def __init__(self, inner=None):
         if inner is None:
-            from langchain_google_genai import GoogleGenerativeAIEmbeddings
             s = get_settings()
             inner = GoogleGenerativeAIEmbeddings(model=s.gemini_embed_model,
                                                  google_api_key=s.gemini_api_key)
@@ -71,7 +71,6 @@ class GeminiEmbedder:
 class OllamaChat:
     def __init__(self, inner=None):
         if inner is None:
-            from langchain_ollama import ChatOllama
             s = get_settings()
             inner = ChatOllama(model=s.ollama_model, base_url=s.ollama_host, temperature=0)
         self._inner = inner
@@ -99,6 +98,11 @@ class TesseractVision:
     BENCHMARK = 70.0
 
     def ocr_image(self, data: bytes, mime: str) -> str:
+        return self.ocr_with_confidence(data, mime)[0]
+
+    def ocr_with_confidence(self, data: bytes, mime: str) -> tuple[str, float]:
+        """Like ocr_image but also returns the best variant's mean word confidence
+        (0-100), so callers can decide whether to escalate (see PrescriptionVision)."""
         variants = self._preprocess_variants(data, mime)
         best_text, best_conf, best_name = "", -1.0, "none"
         for name, img, psm in variants:
@@ -114,15 +118,11 @@ class TesseractVision:
                 break
         log.info("ocr best variant=%s conf=%.1f (benchmark %.0f)",
                  best_name, best_conf, self.BENCHMARK)
-        return best_text.strip()
+        return best_text.strip(), max(best_conf, 0.0)
 
     def _preprocess_variants(self, data: bytes, mime: str):
         """Yield (name, PIL.Image, psm) tuples, cheapest/most-likely first so the
         loop usually stops on variant 1. All PIL-only — no numpy/cv2."""
-        import io
-
-        from PIL import Image, ImageFilter, ImageOps
-
         base = Image.open(io.BytesIO(data))
         gray = ImageOps.grayscale(base)
         # Upscale small scans: Tesseract wants ~300 DPI; phone shots are often less.
@@ -140,8 +140,6 @@ class TesseractVision:
 
     def _ocr_pass(self, img, psm: int) -> tuple[str, float]:
         """Run one Tesseract pass; return (text, mean_word_confidence 0–100)."""
-        import pytesseract
-
         cfg = f"--oem 3 --psm {psm}"
         data = pytesseract.image_to_data(img, config=cfg,
                                          output_type=pytesseract.Output.DICT)
@@ -165,13 +163,11 @@ class OllamaVision:
 
     def __init__(self, inner=None):
         if inner is None:
-            from langchain_ollama import ChatOllama
             s = get_settings()
             inner = ChatOllama(model=s.ollama_vision_model, base_url=s.ollama_host, temperature=0)
         self._inner = inner
 
     def ocr_image(self, data: bytes, mime: str) -> str:
-        import base64
         b64 = base64.b64encode(data).decode()
         msg = [{
             "role": "user",
@@ -227,6 +223,32 @@ class FallbackVision:
         raise RuntimeError(f"all vision providers failed: {last}")
 
 
+class PrescriptionVision:
+    """OCR via Tesseract; escalate to Gemini ONLY when the page looks handwritten.
+
+    Tesseract handles every printed document (free, CPU). When its output looks
+    like a handwritten prescription (low confidence, or near-empty for Bangla),
+    re-OCR that page with the paid Gemini vision model — the sole place Gemini is
+    used. Gemini failure falls back to the Tesseract text (never blocks ingestion).
+    The OCR cache (extraction._extract_raw) means each page is paid for at most once."""
+
+    def __init__(self, tesseract: TesseractVision, gemini=None):
+        self._tess = tesseract
+        self._gemini = gemini
+
+    def ocr_image(self, data: bytes, mime: str) -> str:
+        from app.services.handwriting import looks_like_handwriting
+        text, conf = self._tess.ocr_with_confidence(data, mime)
+        if self._gemini is not None and looks_like_handwriting(text, conf):
+            log.info("handwriting detected (conf=%.1f, len=%d) -> Gemini OCR",
+                     conf, len(text))
+            try:
+                return self._gemini.ocr_image(data, mime)
+            except Exception as e:  # noqa: BLE001 - paid path is best-effort
+                log.warning("Gemini prescription OCR failed, keeping Tesseract: %s", e)
+        return text
+
+
 def build_embedder(candidates: list):
     """Sticky embedder: probe each candidate once; return the first that works.
     Never falls back mid-corpus (would mix incompatible vector spaces)."""
@@ -254,7 +276,8 @@ def build_deps(session_factory: Any):
     ai_provider="groq" (default): Groq primary, Ollama fallback.
     ai_provider="ollama": local-only, no cloud calls.
     ai_provider="fallback": Gemini->Groq->Ollama chat chain (cloud first).
-    OCR is always Tesseract (CPU) — no vision models.
+    OCR: Tesseract (CPU) for printed docs; handwritten prescriptions escalate to
+    the paid Gemini vision model — see PrescriptionVision.
     """
     s = get_settings()
     chats = []
@@ -267,8 +290,10 @@ def build_deps(session_factory: Any):
         chats.append(GroqChat())
     chats.append(OllamaChat())  # always last: offline fallback
 
-    # OCR is Tesseract only — no vision models (CPU, ~0 RAM, deterministic).
-    visions = [TesseractVision()]
+    # OCR: Tesseract for printed docs; escalate handwritten prescriptions to the
+    # paid Gemini vision model (only when Gemini is configured).
+    gemini_vision = GeminiVision() if _has_gemini() else None
+    visions = [PrescriptionVision(TesseractVision(), gemini_vision)]
 
     # Embeddings are pinned to a single provider (Ollama nomic-embed-text, 768-dim):
     # mixing embedding providers corrupts the shared pgvector space, and current

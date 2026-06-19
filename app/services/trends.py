@@ -6,12 +6,9 @@ A "metric" is a test name normalized to lower/trimmed. Only metrics with >=2
 numeric, dated data points are exposed (a single point is not a trend).
 """
 from __future__ import annotations
-
 import re
 from collections import Counter, defaultdict
-
 from sqlalchemy.orm import Session
-
 from app.services import browse as bsvc
 
 # leading signed float, e.g. "11.2", "-0.5", ".01"

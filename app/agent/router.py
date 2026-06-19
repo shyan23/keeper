@@ -1,12 +1,9 @@
 from __future__ import annotations
-
 from typing import Any
-
 from langgraph.types import interrupt
-
 from app.agent.state import IntentDecision
 
-CLARIFY_BELOW = 0.80
+CLARIFY_BELOW = 0.70
 CONFIRM_BELOW = 0.90
 
 _FALLBACK_QUESTION = (

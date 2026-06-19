@@ -1,7 +1,7 @@
 from __future__ import annotations
-
+from pypdf import PdfReader,PdfWriter,PdfMerger
 import io
-
+import fitz
 from app.cache import get_or_set, make_key
 
 # Cap rasterized pages so a huge scan can't stall OCR. 150 DPI keeps document
@@ -18,7 +18,7 @@ _PAGE_SEP = "\f"
 
 
 def _pdf_text(data: bytes) -> str:
-    from pypdf import PdfReader
+    
     reader = PdfReader(io.BytesIO(data))
     parts = [(page.extract_text() or "") for page in reader.pages]
     return _PAGE_SEP.join(parts).strip()
@@ -28,7 +28,6 @@ def slice_pdf(data: bytes, pages: list[int]) -> bytes:
     """Return a new PDF containing only `pages` (0-based) from `data`. Lets each
     detected report be saved as its own file so its card opens just that report,
     not the whole multi-report bundle. Out-of-range/empty -> original bytes."""
-    from pypdf import PdfReader, PdfWriter
     reader = PdfReader(io.BytesIO(data))
     n = len(reader.pages)
     keep = [i for i in pages if 0 <= i < n]
@@ -44,8 +43,6 @@ def slice_pdf(data: bytes, pages: list[int]) -> bytes:
 
 def _pdf_to_images(data: bytes) -> list[bytes]:
     """Rasterize PDF pages to JPEG bytes. Vision models need real images, not PDF bytes."""
-    import fitz  # PyMuPDF
-
     pages: list[bytes] = []
     with fitz.open(stream=data, filetype="pdf") as doc:
         for page in doc[:_MAX_OCR_PAGES]:
@@ -78,7 +75,7 @@ def _extract_raw(data: bytes, *, mime_type: str, vision, progress=None) -> str:
     # OCR is the slow, blocking step; cache by content+type so a re-upload of the
     # same document is instant instead of re-running OCR page by page. Key bumped
     # to ocr2 since the stored form now uses the page separator.
-    key = make_key("ocr2", mime_type, data)
+    key = make_key("ocr3", mime_type, data)
     return get_or_set(key, lambda: _ocr(data, mime_type, vision, progress))
 
 
