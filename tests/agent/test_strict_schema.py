@@ -1,5 +1,20 @@
+from pydantic import BaseModel
+
 from app.agent.schema import to_strict_schema
 from app.agent.state import ExtractionResult
+
+
+def test_property_named_title_is_preserved():
+    # A field literally named `title` must survive — the sanitizer strips the
+    # JSON-Schema `title` ANNOTATION, not a same-named property (regression: split
+    # ReportSpec.title was dropped from properties but left in required -> 400).
+    class HasTitle(BaseModel):
+        title: str = "x"
+        n: int = 0
+
+    s = to_strict_schema(HasTitle)
+    assert "title" in s["properties"]
+    assert set(s["required"]) == set(s["properties"].keys()) == {"title", "n"}
 
 
 def test_top_level_object_is_strict():

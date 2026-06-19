@@ -1,7 +1,11 @@
 """Run the deterministic scoring suites and produce a scorecard.
 
 Two suites:
-  - extraction: text -> chat.structured(ExtractionResult) -> deterministic field scoring.
+  - extraction: runs the PROD path — split the bundle into reports, extract each,
+                union the results -> deterministic field scoring. A multi-report PDF
+                in prod becomes N documents; cramming it into one structured() call
+                (one date, one flat test list) understated extraction. Mirroring prod
+                makes the model the only thing that moves the numbers.
                 Needs a free chat model (Groq free tier / local Ollama). No database.
   - retrieval:  seed synthetic chunks (real local embedder) -> search_chunks -> recall@k.
                 Opt-in (--retrieval). Refuses to touch the production DB: requires
@@ -32,16 +36,16 @@ RESULTS = Path(__file__).resolve().parents[2] / "eval" / "last_run.json"
 
 def build_chat():
     """The free chat client used by the agent, without probing the embedder.
-    Mirrors the chat-selection in app.agent.providers.build_deps."""
+    Groq only — Ollama fallback is not routed here (model not pulled; a dead
+    fallback just turns a Groq hiccup into noisy log spam, not a usable result)."""
     from app.config import get_settings
     from app.agent.llm import GroqChat
-    from app.agent.providers import OllamaChat, FallbackChat
+    from app.agent.providers import FallbackChat
 
     s = get_settings()
     chats: list[Any] = []
     if s.ai_provider in ("groq", "fallback") and s.groq_api_key:
         chats.append(GroqChat())
-    chats.append(OllamaChat())  # always last: offline fallback
     return FallbackChat(chats)
 
 
@@ -52,10 +56,41 @@ def load_golden(path: Path = GOLDEN) -> dict:
 
 # ---- extraction suite ----
 
-def run_extraction(cases: list[dict], chat) -> dict:
-    from app.agent.state import ExtractionResult
-    from app.agent.nodes.ingest import _EXTRACT_PROMPT
+_LIST_FIELDS = ("diseases", "symptoms", "medications", "tests")
+_SCALAR_FIELDS = ("patient_name", "patient_age", "patient_gender",
+                  "doc_type", "doc_date", "doctor")
 
+
+def _merge_extractions(parts: list[dict]) -> dict:
+    """Union N per-report extractions into one ExtractionResult-shaped dict.
+    Prod keeps reports as separate documents; the annotation grades the whole file,
+    so list fields are concatenated and scalars take the first non-empty value
+    (patient/age/gender repeat across a bundle; doc_date/doctor vary -> first wins)."""
+    merged: dict = {f: [] for f in _LIST_FIELDS}
+    for p in parts:
+        for f in _LIST_FIELDS:
+            merged[f].extend(p.get(f) or [])
+        for f in _SCALAR_FIELDS:
+            if not merged.get(f) and p.get(f):
+                merged[f] = p[f]
+    return merged
+
+
+def segment_and_extract(case: dict, chat) -> dict:
+    """The prod ingest path, minus the database: split the scan into reports
+    (split_reports), extract each (_extract_one), union the results. Single-report
+    cases (`text` or one-element `pages`) make no split call and behave as before."""
+    from types import SimpleNamespace
+    from app.services.segment import split_reports
+    from app.agent.nodes.ingest import _extract_one
+
+    pages = case.get("pages") or [case.get("text", "")]
+    deps = SimpleNamespace(chat=chat, ner=None)
+    parts = [_extract_one(deps, seg["text"]) for seg in split_reports(chat, pages)]
+    return _merge_extractions(parts)
+
+
+def run_extraction(cases: list[dict], chat) -> dict:
     per_case = []
     agg = {"scalar_correct": 0, "scalar_total": 0,
            "test_name_matched": 0, "test_value_matched": 0, "test_expected": 0,
@@ -63,8 +98,8 @@ def run_extraction(cases: list[dict], chat) -> dict:
     for c in cases:
         cid = c.get("id", "?")
         try:
-            pred = chat.structured(_EXTRACT_PROMPT.format(text=c["text"]), ExtractionResult)
-            m = scorers.score_extraction(pred.model_dump(), c["expect"])
+            pred = segment_and_extract(c, chat)
+            m = scorers.score_extraction(pred, c["expect"])
         except Exception as exc:  # noqa: BLE001 - a model failure is a case failure, not a crash
             agg["errors"] += 1
             per_case.append({"id": cid, "error": str(exc)[:200]})

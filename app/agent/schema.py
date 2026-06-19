@@ -23,14 +23,23 @@ def to_strict_schema(model: type[BaseModel], drop: Iterable[str] = ()) -> dict:
 
 def _strictify(node, drop: frozenset[str]) -> None:
     if isinstance(node, dict):
-        if node.get("type") == "object" and "properties" in node:
-            for name in [k for k in node["properties"] if k in drop]:
-                del node["properties"][name]
+        props = node.get("properties")
+        if node.get("type") == "object" and isinstance(props, dict):
+            for name in [k for k in props if k in drop]:
+                del props[name]
             node["additionalProperties"] = False
-            node["required"] = list(node["properties"].keys())
+            node["required"] = list(props.keys())
+            for sub in props.values():  # recurse into property SCHEMAS only
+                _strictify(sub, drop)
         node.pop("default", None)
-        node.pop("title", None)
-        for v in node.values():
+        # `title` is a JSON-Schema annotation (always a string) — strip it. Do NOT
+        # touch a property/def literally NAMED "title" (its value is a schema dict);
+        # that's why we never pop keys from the `properties` map above.
+        if isinstance(node.get("title"), str):
+            node.pop("title", None)
+        for key, v in node.items():
+            if key == "properties":
+                continue  # handled above; its keys are field names, not schemas
             _strictify(v, drop)
     elif isinstance(node, list):
         for v in node:

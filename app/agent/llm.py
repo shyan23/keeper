@@ -31,9 +31,13 @@ class GroqChat:
         if self._structured_inner is None:
             from langchain_groq import ChatGroq
             s = get_settings()
+            # max_tokens is RESERVED against the free-tier 8000 TPM budget, not
+            # just billed on use — 8192 alone exceeds the limit, so every call
+            # 413s. 4096 fits (input here is <2k tok) and is ample now that the
+            # output-bloating source_span/confidence fields are dropped.
             self._structured_inner = ChatGroq(model=s.groq_structured_model,
                                               api_key=s.groq_api_key, temperature=0,
-                                              max_tokens=8192)
+                                              max_tokens=4096)
         return self._structured_inner
 
     def complete(self, prompt: str) -> str:

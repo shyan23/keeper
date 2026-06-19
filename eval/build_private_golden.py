@@ -1,7 +1,10 @@
 """Build a PRIVATE golden set from hand-annotated real reports in Med_documents/.
 
-Pairs each PDF's real OCR text (what the extractor actually sees in prod) with an
-`expect` block normalized from its hand annotation JSON. The annotations are
+Pairs each PDF's real per-page OCR (what the extractor actually sees in prod) with
+an `expect` block normalized from its hand annotation JSON. Pages are stored as a
+list so the harness can run the prod split-into-reports path before extracting; a
+bundle of 3 reports is graded the way prod handles it, not crammed into one call.
+The annotations are
 heterogeneous (patient_info vs patient_name; results as dict vs list; parameter vs
 test_name), so a generic recursive walk pulls the gradeable fields out of any shape.
 
@@ -22,7 +25,7 @@ import re
 
 import yaml
 
-from app.services.extraction import extract_text
+from app.services.extraction import extract_pages
 from app.agent.providers import TesseractVision
 
 MED_DIR = "Med_documents"
@@ -105,8 +108,8 @@ def dedup_tests(tests: list[dict]) -> list[dict]:
 
 
 def build_case(pdf_path: str, ann: dict, vision) -> dict | None:
-    text = extract_text(open(pdf_path, "rb").read(),
-                        mime_type="application/pdf", vision=vision)
+    pages = extract_pages(open(pdf_path, "rb").read(),
+                          mime_type="application/pdf", vision=vision)
     acc = {"tests": [], "meds": []}
     collect(ann, acc)
 
@@ -133,7 +136,7 @@ def build_case(pdf_path: str, ann: dict, vision) -> dict | None:
     if len(expect) < 2:  # nothing meaningful to grade
         return None
     cid = os.path.splitext(os.path.basename(pdf_path))[0].lower().replace(" ", "-")
-    return {"id": cid, "text": text, "expect": expect}
+    return {"id": cid, "pages": pages, "expect": expect}
 
 
 def main() -> None:
