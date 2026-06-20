@@ -158,6 +158,38 @@ function renderSidebar() {
   }
 }
 
+// ── Patient deduplication helpers (mirror of app/agent/nodes/ingest.py) ─────
+const _TITLE_TOKENS = new Set([
+  'mr','mrs','ms','miss','mst','mds','master','md','dr','prof','professor',
+  'mister','sir','madam','smt','begum','mr.','mrs.','dr.','mst.','mds.',
+]);
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[.,]/g, ' ')
+    .split(/\s+/).filter(t => t && !_TITLE_TOKENS.has(t)).join(' ');
+}
+// Ratcliff/Obershelp matching blocks — mirrors Python difflib.SequenceMatcher
+function _matchingChars(a: string, b: string): number {
+  if (!a || !b) return 0;
+  let best = 0, bi = 0, bj = 0, bk = 0;
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) {
+      let k = 0;
+      while (i + k < a.length && j + k < b.length && a[i + k] === b[j + k]) k++;
+      if (k > best) { best = k; bi = i; bj = j; bk = k; }
+    }
+  }
+  if (best === 0) return 0;
+  return best
+    + (bi > 0 && bj > 0 ? _matchingChars(a.slice(0, bi), b.slice(0, bj)) : 0)
+    + (bi + bk < a.length && bj + bk < b.length
+        ? _matchingChars(a.slice(bi + bk), b.slice(bj + bk)) : 0);
+}
+function nameSimilarity(a: string, b: string): number {
+  const T = a.length + b.length;
+  return T ? 2 * _matchingChars(a, b) / T : 1;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function addPatientFormHtml() {
   return `
     <form id="add-patient-form" class="mt-4 pt-4 border-t border-[#232725] space-y-2">
@@ -907,7 +939,7 @@ function interruptCardHtml(payload: any, idx: number) {
           <i data-lucide="users" class="w-3.5 h-3.5 text-amber-600"></i>
           <span class="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Possible match — same person?</span>
         </div>
-        <input type="hidden" id="int-pid-${idx}" value="" />
+        <input type="hidden" id="int-pid-${idx}" value="_unset_" />
         <div class="space-y-1.5">
           ${candidates.map((c: any) => `
             <button type="button" data-pid="${esc(c.id)}" data-pidtgt="int-pid-${idx}"
@@ -1100,11 +1132,79 @@ function bindInterruptButtons() {
         if (t.dataset.act === 'confirm') {
           const c = collectSegments(idx, payload);
           const pidInput = ($(`int-pid-${idx}`) as HTMLInputElement | null);
-          const chosenPid = pidInput?.value ? parseInt(pidInput.value, 10) : null;
+          const pidVal = pidInput?.value ?? '_unset_';
+          // Block confirm if candidates exist but user hasn't picked one yet
+          if (pidVal === '_unset_' && (payload.candidates || []).length > 0) {
+            const ambSection = pidInput?.closest('.bg-amber-50') as HTMLElement | null;
+            if (ambSection) {
+              ambSection.style.transition = 'box-shadow 0.15s';
+              ambSection.style.boxShadow = '0 0 0 2px #f87171';
+              setTimeout(() => { ambSection.style.boxShadow = ''; }, 1400);
+            }
+            return;
+          }
+          const chosenPid = (pidVal && pidVal !== '_unset_') ? parseInt(pidVal, 10) : null;
+          const resolvedPid = chosenPid || payload.patient_id || null;
+          // Live fuzzy check: run whenever typed name differs from what the
+          // backend already resolved — catches user edits in the name field.
+          const typedName = c.patient_name
+            || ($(`int-name-${idx}`) as HTMLInputElement | null)?.value.trim()
+            || '';
+          const originalName = payload.extracted_name || payload.extracted?.patient_name || '';
+          const nameEdited = typedName && normalizeName(typedName) !== normalizeName(originalName);
+          // Run live check when: no explicit pick, not a deliberate "No", and
+          // either the name was edited OR no backend patient was pre-resolved.
+          const needsCheck = !chosenPid && pidVal !== ''
+            && (nameEdited || !payload.patient_id);
+          // If user explicitly hit "No" from the live picker, override any
+          // backend-resolved patient_id so a fresh profile is created.
+          const livePicker = t.closest('.bg-gradient-to-br')?.querySelector('.ap-live-picker');
+          const effectivePid = (livePicker && pidVal === '') ? null : resolvedPid;
+          if (needsCheck && typedName) {
+            const tnorm = normalizeName(typedName);
+            const liveMatches = patients.filter(p => {
+              const pnorm = normalizeName(p.name);
+              return pnorm === tnorm || (pnorm !== tnorm && nameSimilarity(pnorm, tnorm) >= 0.80);
+            });
+            if (liveMatches.length > 0) {
+              // Inject amber picker dynamically and block until user picks
+              const card = t.closest('.bg-gradient-to-br') as HTMLElement | null;
+              if (card && !card.querySelector('.ap-live-picker')) {
+                const pickerDiv = document.createElement('div');
+                pickerDiv.className = 'ap-live-picker mb-4 bg-amber-50 border border-amber-200 rounded-2xl p-3';
+                pickerDiv.innerHTML = `
+                  <div class="flex items-center gap-1.5 mb-2">
+                    <span class="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Possible match — same person?</span>
+                  </div>
+                  <input type="hidden" id="int-pid-${idx}" value="_unset_" />
+                  <div class="space-y-1.5">
+                    ${liveMatches.map(p => `
+                      <button type="button" data-pid="${esc(String(p.id))}" data-pidtgt="int-pid-${idx}"
+                        class="pid-pick-btn w-full text-left px-3 py-2 rounded-xl border border-amber-200 bg-white hover:bg-amber-100 transition-colors flex items-center justify-between group">
+                        <span class="text-[12px] font-semibold text-[#2E2C29]">${esc(p.name)}</span>
+                        <span class="text-[10px] text-amber-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Use this →</span>
+                      </button>`).join('')}
+                    <button type="button" data-pid="" data-pidtgt="int-pid-${idx}"
+                      class="pid-pick-btn w-full text-left px-3 py-2 rounded-xl border border-dashed border-amber-300 bg-white/50 hover:bg-white transition-colors">
+                      <span class="text-[11px] text-[#8C8982]">No — create as new patient</span>
+                    </button>
+                  </div>`;
+                card.insertBefore(pickerDiv, card.querySelector('.flex.gap-2\\.5'));
+                // Flash to draw attention
+                pickerDiv.style.boxShadow = '0 0 0 2px #fbbf24';
+                setTimeout(() => { pickerDiv.style.boxShadow = ''; }, 1400);
+              } else if (card?.querySelector('.ap-live-picker')) {
+                // Already shown — flash it again as reminder
+                const existing = card.querySelector('.ap-live-picker') as HTMLElement;
+                existing.style.boxShadow = '0 0 0 2px #f87171';
+                setTimeout(() => { existing.style.boxShadow = ''; }, 1400);
+              }
+              return;
+            }
+          }
           resume = { approved: true, segments: c.segments,
             extracted: c.segments[0]?.extracted,
-            ...(chosenPid ? { patient_id: chosenPid }
-              : payload.patient_id ? { patient_id: payload.patient_id } : {}),
+            ...(effectivePid ? { patient_id: effectivePid } : {}),
             ...(c.patient_name ? { name: c.patient_name } : {}) };
         } else {
           resume = { approved: false };
