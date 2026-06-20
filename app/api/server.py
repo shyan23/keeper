@@ -14,6 +14,7 @@ logging.basicConfig(
 
 from app.api.routes_browse import router as browse_router
 from app.api.routes_chat import router as chat_router
+from app.api.routes_tracer import router as tracer_router
 
 app = FastAPI(title="MedAgentic API")
 
@@ -26,3 +27,4 @@ app.add_middleware(
 
 app.include_router(browse_router)
 app.include_router(chat_router)
+app.include_router(tracer_router)

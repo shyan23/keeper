@@ -97,6 +97,8 @@ export async function streamChat(body: {
   await readSse(res, handlers);
 }
 
+export const getActivity = () => json<any>('/api/tracer/activity');
+
 export async function resumeChat(body: { thread_id: string; resume: any },
                                  handlers: SseHandlers): Promise<void> {
   const res = await fetch(`${API}/api/chat/resume`, {

@@ -2,7 +2,7 @@ import './index.css';
 import { ApiDocument, ApiPatient, ApiRecord, CitationSource } from './types';
 import {
   apiUrl, createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
-  resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries,
+  resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries, getActivity,
 } from './api';
 import { Chart, registerables } from 'chart.js';
 Chart.register(...registerables);
@@ -44,7 +44,7 @@ let sortOrder: 'desc' | 'asc' = 'desc';
 let trendMetric: string | null = null;
 let trendChart: Chart | null = null;
 let mobileTab: 'dashboard' | 'knowledge' = 'dashboard';
-let panelTab: 'chat' | 'docs' = 'chat';
+let panelTab: 'chat' | 'docs' | 'tracer' = 'chat';
 let chats: ChatMsg[] = [];
 let stagedFileName = '';
 const expandedCards = new Set<string>();   // which document cards are expanded
@@ -550,31 +550,143 @@ function bindCardButtons() {
 function renderChatbot() {
   const tabChat = $('panel-tab-chat');
   const tabDocs = $('panel-tab-docs');
+  const tabTracer = $('panel-tab-tracer');
   const viewChat = $('view-chat');
   const viewDocs = $('view-docs');
+  const viewTracer = $('view-tracer');
   if (!tabChat || !tabDocs || !viewChat || !viewDocs) return;
 
   const activeCls = 'flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all duration-200 border-b-[3px] border-[#5D7B6F] text-[#2E2C29] bg-white/70';
   const idleCls = 'flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all duration-200 border-b-[3px] border-transparent text-[#9AA39E] hover:text-[#2E2C29] hover:bg-white/40 bg-transparent';
 
-  if (panelTab === 'chat') {
-    tabChat.className = activeCls;
-    tabChat.innerHTML = `<div class="w-2 h-2 rounded-full bg-[#5D7B6F]"></div> Agentic AI`;
-    tabDocs.className = idleCls;
-    tabDocs.innerHTML = `<i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> Knowledge`;
-    viewChat.classList.remove('hidden'); viewChat.classList.add('flex');
-    viewDocs.classList.add('hidden'); viewDocs.classList.remove('flex');
-  } else {
-    tabChat.className = idleCls;
-    tabChat.innerHTML = `<div class="w-2 h-2 rounded-full bg-[#D5D2C9]"></div> Agentic AI`;
-    tabDocs.className = activeCls;
-    tabDocs.innerHTML = `<i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> Knowledge`;
-    viewChat.classList.add('hidden'); viewChat.classList.remove('flex');
-    viewDocs.classList.remove('hidden'); viewDocs.classList.add('flex');
+  const showEl = (v: Element | null) => { v?.classList.remove('hidden'); v?.classList.add('flex'); };
+  const hideEl = (v: Element | null) => { v?.classList.add('hidden'); v?.classList.remove('flex'); };
+
+  tabChat.className = panelTab === 'chat' ? activeCls : idleCls;
+  setHtml(tabChat, panelTab === 'chat'
+    ? `<div class="w-2 h-2 rounded-full bg-[#5D7B6F]"></div> Agentic AI`
+    : `<div class="w-2 h-2 rounded-full bg-[#D5D2C9]"></div> Agentic AI`);
+  tabDocs.className = panelTab === 'docs' ? activeCls : idleCls;
+  setHtml(tabDocs, `<i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> Knowledge`);
+  if (tabTracer) {
+    tabTracer.className = panelTab === 'tracer' ? activeCls : idleCls;
+    setHtml(tabTracer, `<i data-lucide="activity" class="w-3.5 h-3.5"></i> Activity`);
   }
+
+  if (panelTab === 'chat') { showEl(viewChat); hideEl(viewDocs); hideEl(viewTracer); }
+  else if (panelTab === 'docs') { hideEl(viewChat); showEl(viewDocs); hideEl(viewTracer); }
+  else { hideEl(viewChat); hideEl(viewDocs); showEl(viewTracer); }
 
   renderMessages();
   renderDocs();
+}
+
+// ---- Activity / Tracer view ----
+
+let _tracerData: any = null;
+let _tracerLoading = false;
+
+async function loadTracer() {
+  if (_tracerLoading) return;
+  _tracerLoading = true;
+  setHtml($('tracer-content'),
+    `<div class="flex justify-center pt-12 text-[#A6A298]"><i data-lucide="loader-2" class="w-6 h-6 animate-spin"></i></div>`);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  try {
+    _tracerData = await getActivity();
+  } catch {
+    _tracerData = { enabled: true, error: 'Could not reach backend.', conversations: [], stats: {} };
+  } finally {
+    _tracerLoading = false;
+    setHtml($('tracer-content'), buildTracerHtml(_tracerData));
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+}
+
+function speedBadgeHtml(speed: string): string {
+  if (speed === 'fast')
+    return `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DCF0E8] text-[#2E7D50]">Fast</span>`;
+  if (speed === 'slow')
+    return `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FDECEA] text-[#C0392B]">Slow</span>`;
+  return `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#F0EFEB] text-[#6D716E]">Normal</span>`;
+}
+
+function buildTracerHtml(d: any): string {
+  if (!d || !d.enabled) {
+    return `<div class="flex flex-col items-center justify-center text-center pt-12 px-6 gap-4">
+      <div class="w-14 h-14 rounded-2xl bg-[#F5F4F0] border border-[#EBEBE6] flex items-center justify-center">
+        <i data-lucide="eye-off" class="w-6 h-6 text-[#A6A298]"></i>
+      </div>
+      <div>
+        <p class="text-sm font-semibold text-[#2E2C29]">Tracing not enabled</p>
+        <p class="text-[12px] text-[#A6A298] mt-1 leading-relaxed max-w-[240px]">
+          Add LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY to .env and restart.
+        </p>
+      </div>
+    </div>`;
+  }
+
+  if (d.error) {
+    return `<div class="p-4 bg-[#FEF3EE] border border-[#F5C7B0] rounded-xl text-sm text-[#7A3B2E] flex gap-2 items-start">
+      <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 mt-0.5 text-[#C16D54]"></i>
+      <span>${esc(d.error)}</span>
+    </div>`;
+  }
+
+  const stats = d.stats || {};
+  const convs: any[] = d.conversations || [];
+
+  const statsHtml = `<div class="bg-white/70 border border-[#EBEBE6] rounded-2xl p-4 flex gap-4 flex-wrap">
+    <div class="flex-1 min-w-[80px]">
+      <p class="text-[10px] font-bold text-[#8C8982] uppercase tracking-widest">Sessions</p>
+      <p class="text-2xl font-bold text-[#2E2C29] mt-0.5">${esc(stats.total ?? 0)}</p>
+    </div>
+    ${stats.avg_duration_s != null ? `<div class="flex-1 min-w-[80px]">
+      <p class="text-[10px] font-bold text-[#8C8982] uppercase tracking-widest">Avg Speed</p>
+      <p class="text-2xl font-bold text-[#2E2C29] mt-0.5">${esc(stats.avg_duration_s)}s</p>
+    </div>` : ''}
+    ${stats.total_tokens ? `<div class="flex-1 min-w-[80px]">
+      <p class="text-[10px] font-bold text-[#8C8982] uppercase tracking-widest">Tokens Used</p>
+      <p class="text-2xl font-bold text-[#2E2C29] mt-0.5">${esc(stats.total_tokens)}</p>
+    </div>` : ''}
+  </div>`;
+
+  if (!convs.length) {
+    return statsHtml + `<div class="flex flex-col items-center justify-center text-center pt-8 gap-3">
+      <i data-lucide="zap" class="w-8 h-8 text-[#D5D2C9]"></i>
+      <p class="text-sm text-[#A6A298]">No conversations yet.<br>Start chatting and come back here.</p>
+    </div>`;
+  }
+
+  const groups = new Map<string, any[]>();
+  for (const c of convs) {
+    const day = c.day || 'Earlier';
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day)!.push(c);
+  }
+
+  let html = statsHtml;
+  for (const [day, items] of groups) {
+    const cards = items.map(c => `<div class="bg-white/70 border border-[#EBEBE6] rounded-xl p-3 flex gap-3 items-start hover:bg-white/90 transition-colors">
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${c.kind === 'upload' ? 'bg-[#EEF2FF]' : 'bg-[#F0F7F4]'}">
+        <i data-lucide="${c.kind === 'upload' ? 'file-text' : 'message-circle'}" class="w-4 h-4 ${c.kind === 'upload' ? 'text-[#5B6EC7]' : 'text-[#5D7B6F]'}"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="text-[13px] font-medium text-[#2E2C29] leading-snug line-clamp-2">${esc(c.question)}</p>
+        <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+          ${speedBadgeHtml(c.speed)}
+          ${c.duration_s != null ? `<span class="text-[11px] text-[#8C8982]">${esc(c.duration_s)}s</span>` : ''}
+          ${c.tokens ? `<span class="text-[11px] text-[#8C8982]">· ${esc(c.tokens)} tokens</span>` : ''}
+        </div>
+      </div>
+      <div class="text-[10px] text-[#A6A298] shrink-0 mt-0.5">${esc(c.time)}</div>
+    </div>`).join('');
+    html += `<div>
+      <p class="text-[10px] font-bold text-[#8C8982] uppercase tracking-widest mb-2 px-1">${esc(day)}</p>
+      <div class="space-y-2">${cards}</div>
+    </div>`;
+  }
+  return html;
 }
 
 // Circular loading spinner (Lucide loader-2 + animate-spin; lucide keeps the class).
@@ -1073,6 +1185,7 @@ document.addEventListener('click', e => {
   const id = (e.target as HTMLElement).closest('button')?.id;
   if (id === 'panel-tab-chat') { panelTab = 'chat'; render(); }
   else if (id === 'panel-tab-docs') { panelTab = 'docs'; render(); }
+  else if (id === 'panel-tab-tracer') { panelTab = 'tracer'; render(); loadTracer(); }
   else if (id === 'tab-dashboard') { mobileTab = 'dashboard'; render(); }
   else if (id === 'tab-knowledge') { mobileTab = 'knowledge'; render(); }
 });
