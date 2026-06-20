@@ -13,7 +13,7 @@ def test_langfuse_settings_default_off(monkeypatch):
     s = Settings(database_url="postgresql://x/y")
     assert s.langfuse_public_key is None
     assert s.langfuse_secret_key is None
-    assert s.langfuse_host == "http://localhost:3000"
+    assert s.langfuse_host == "http://localhost:3001"
 
 
 def test_tracing_disabled_when_keys_missing(monkeypatch):

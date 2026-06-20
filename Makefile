@@ -6,7 +6,7 @@ mcp:
 
 # Backend API (single worker: in-process agent checkpointer; --reload picks up edits).
 run:
-	uvicorn app.api.server:app --port 8000 --workers 1 --reload
+	.venv/bin/uvicorn app.api.server:app --port 8000 --workers 1 --reload
 
 # Frontend dev server (vanilla TS, Vite).
 ui:
@@ -26,7 +26,7 @@ tracing-down:
 # Tracing is a no-op when keys are blank — safe to run without them.
 dev:
 	$(MAKE) tracing
-	uvicorn app.api.server:app --port 8000 --workers 1 --reload & \
+	.venv/bin/uvicorn app.api.server:app --port 8000 --workers 1 --reload & \
 	cd medagentic-dashboard && npm run dev
 
 # Deterministic eval (extraction quality). Uses the free chat model, no DB.

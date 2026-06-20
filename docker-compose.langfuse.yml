@@ -1,6 +1,7 @@
 # Self-hosted Langfuse v2 (lightweight: web + its own Postgres). Local only.
 # Start:  docker compose -f docker-compose.langfuse.yml up -d
-# UI:     http://localhost:3000  (create a project, copy keys into .env)
+# UI:     http://localhost:3001  (create a project, copy keys into .env)
+# Port 3001 reserved for Langfuse; 3000 is the app frontend (Vite).
 services:
   langfuse-server:
     image: langfuse/langfuse:2
@@ -8,10 +9,10 @@ services:
       langfuse-db:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@langfuse-db:5432/postgres
-      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://localhost:3001
       NEXTAUTH_SECRET: change-me-langfuse-secret
       SALT: change-me-langfuse-salt
       TELEMETRY_ENABLED: "false"

@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # set. host MUST stay local — never cloud.langfuse.com (medical prompts).
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
-    langfuse_host: str = "http://localhost:3000"
+    langfuse_host: str = "http://localhost:3001"
 
 
 @lru_cache

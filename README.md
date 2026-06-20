@@ -642,15 +642,17 @@ Specs and plans live under `.claude/specs/`, `.claude/plans/`, and
 
 Per-conversation traces (node latency + LLM model/tokens), fully local.
 
-1. `docker compose -f docker-compose.langfuse.yml up -d`
-2. Open http://localhost:3000, create an account + project.
+1. `make dev` starts the Langfuse stack automatically (or `make tracing` alone).
+2. Open http://localhost:3001, create an account + project.
 3. Copy the project's public/secret keys into `.env`:
    ```
    LANGFUSE_PUBLIC_KEY=pk-...
    LANGFUSE_SECRET_KEY=sk-...
-   LANGFUSE_HOST=http://localhost:3000
+   LANGFUSE_HOST=http://localhost:3001
    ```
 4. Restart the app. Traces appear per conversation (grouped by thread/session).
+
+Port layout: `3000` = app frontend (Vite), `3001` = Langfuse UI, `8000` = backend API.
 
 Tracing is OFF when the keys are blank. **Keep `LANGFUSE_HOST` local — never
 `cloud.langfuse.com`; traces contain medical content.**
