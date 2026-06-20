@@ -1,5 +1,5 @@
 import {
-  ApiDocument, ApiPatient, ApiRecord, Health, SseHandlers, TrendMetric, TrendSeries,
+  ApiDocument, ApiPatient, ApiRecord, Health, SseHandlers, TrendMetric, TrendSeries, MedicalGraph,
 } from './types';
 
 const API = (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
@@ -99,6 +99,8 @@ export async function streamChat(body: {
 
 export const getActivity = () => json<any>('/api/tracer/activity');
 export const getCost = () => json<any>('/api/tracer/cost');
+export const getGraph = (patientId: string) =>
+  json<MedicalGraph>(`/api/patients/${patientId}/graph`);
 
 export async function resumeChat(body: { thread_id: string; resume: any },
                                  handlers: SseHandlers): Promise<void> {

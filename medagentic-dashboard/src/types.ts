@@ -119,3 +119,36 @@ export interface SseHandlers {
   onError?: (message: string) => void;
   onDone?: (meta?: { patient_id?: number; document_id?: number }) => void;
 }
+
+export interface GraphNode {
+  id: string;
+  type: 'disease' | 'medication' | 'test';
+  label: string;
+  date: string | null;
+  status: 'normal' | 'warning' | 'critical';
+  value?: string | null;
+  unit?: string | null;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  type: string;
+  confidence: number;
+  temporal?: boolean;
+  days_apart?: number;
+}
+
+export interface GraphAlert {
+  type: 'duplicate_test' | 'dangerous_trend' | 'repeated_abnormal';
+  severity: 'warning' | 'critical';
+  message: string;
+  test: string;
+  dates?: string[];
+}
+
+export interface MedicalGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  alerts: GraphAlert[];
+}
