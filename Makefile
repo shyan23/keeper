@@ -1,4 +1,4 @@
-.PHONY: run ui dev eval eval-retrieval mcp
+.PHONY: run ui dev tracing tracing-down eval eval-retrieval mcp
 
 # MCP server (stdio) — exposes records/search as tools for any MCP client.
 mcp:
@@ -12,8 +12,20 @@ run:
 ui:
 	cd medagentic-dashboard && npm run dev
 
-# Both at once (backend backgrounded; Ctrl-C stops the UI).
+# Self-hosted Langfuse v2 tracing stack (Langfuse + its own Postgres).
+# After first start: open http://localhost:3000, create a project, copy keys into .env.
+tracing:
+	docker compose -f docker-compose.langfuse.yml up -d
+
+# Tear down the Langfuse stack (data volume is preserved).
+tracing-down:
+	docker compose -f docker-compose.langfuse.yml down
+
+# Full dev environment: Langfuse + backend + frontend.
+# First run: `make tracing` then set LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY in .env.
+# Tracing is a no-op when keys are blank — safe to run without them.
 dev:
+	$(MAKE) tracing
 	uvicorn app.api.server:app --port 8000 --workers 1 --reload & \
 	cd medagentic-dashboard && npm run dev
 
