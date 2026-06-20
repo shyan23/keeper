@@ -24,7 +24,13 @@ def get_handler(session_id: str | None = None):
         return None
     try:
         from langfuse.callback import CallbackHandler
-        return CallbackHandler(session_id=session_id)
+        s = get_settings()
+        return CallbackHandler(
+            public_key=s.langfuse_public_key,
+            secret_key=s.langfuse_secret_key,
+            host=s.langfuse_host,
+            session_id=session_id,
+        )
     except Exception:  # noqa: BLE001 - tracing must never break a request
         logger.warning("Langfuse handler unavailable; continuing untraced.",
                        exc_info=True)

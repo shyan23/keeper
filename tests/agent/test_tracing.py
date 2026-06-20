@@ -24,11 +24,11 @@ def test_tracing_disabled_when_keys_missing(monkeypatch):
 
 
 def test_tracing_enabled_when_both_keys_set(monkeypatch):
+    # Keys come from Settings (pydantic reads .env); no os.environ needed now
+    # that get_handler passes them explicitly to CallbackHandler.
     monkeypatch.setattr(get_settings(), "langfuse_public_key", "pk-test", raising=True)
     monkeypatch.setattr(get_settings(), "langfuse_secret_key", "sk-test", raising=True)
-    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
-    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
-    monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+    monkeypatch.setattr(get_settings(), "langfuse_host", "http://localhost:3000", raising=True)
     assert tracing.tracing_enabled() is True
     handler = tracing.get_handler("thread-1")
     assert handler is not None
