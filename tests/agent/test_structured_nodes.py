@@ -7,10 +7,10 @@ class _FakeChat:
     def __init__(self, payload):
         self._payload = payload
 
-    def complete(self, prompt):
+    def complete(self, prompt, config=None):
         return ""
 
-    def structured(self, prompt, schema):
+    def structured(self, prompt, schema, config=None):
         return schema(**self._payload)
 
 

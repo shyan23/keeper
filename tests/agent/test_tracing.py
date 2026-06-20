@@ -86,3 +86,28 @@ def test_fallbackchat_complete_forwards_config():
     chat = FallbackChat([p])
     chat.complete("hi", config={"callbacks": ["h"]})
     assert p.seen_config == {"callbacks": ["h"]}
+
+
+from app.agent.nodes.rag import generate_answer_node
+
+
+class _RecordingChat:
+    def __init__(self):
+        self.seen_config = "UNSET"
+
+    def complete(self, prompt, config=None):
+        self.seen_config = config
+        return "an answer"
+
+
+def test_generate_answer_node_forwards_config():
+    chat = _RecordingChat()
+    deps = type("Deps", (), {"chat": chat})()
+    config = {"configurable": {"deps": deps}, "callbacks": ["h"]}
+    state = {
+        "messages": [{"role": "user", "content": "what is my RBC?"}],
+        "retrieved": [{"text": "RBC 5.1", "chunk_id": 1, "doc_type": "lab",
+                       "report_date": "2026-01-01"}],
+    }
+    generate_answer_node(state, config)
+    assert chat.seen_config == config

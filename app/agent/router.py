@@ -64,7 +64,8 @@ def classify_intent(state: dict[str, Any], config: dict[str, Any]) -> dict[str, 
 
     deps = config["configurable"]["deps"]
     decision: IntentDecision = deps.chat.structured(
-        _PROMPT.format(conversation=_recent_conversation(state)), IntentDecision)
+        _PROMPT.format(conversation=_recent_conversation(state)), IntentDecision,
+        config=config)
 
     if decision.confidence < CLARIFY_BELOW:
         question = decision.question or _FALLBACK_QUESTION

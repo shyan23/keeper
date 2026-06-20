@@ -72,7 +72,7 @@ def transform_query_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
     deps = config["configurable"]["deps"]
     q = _last_user_text(state)
     try:
-        hyde = deps.chat.complete(_HYDE_PROMPT.format(q=q))
+        hyde = deps.chat.complete(_HYDE_PROMPT.format(q=q), config=config)
     except Exception:  # noqa: BLE001 - HyDE is best-effort
         hyde = ""
     return {"retrieval_query": (hyde or q)}
@@ -97,7 +97,7 @@ def rerank_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]
     q = _last_user_text(state)
     scored = []
     for h in hits:
-        raw = deps.chat.complete(_RERANK_PROMPT.format(q=q, snip=h["text"]))
+        raw = deps.chat.complete(_RERANK_PROMPT.format(q=q, snip=h["text"]), config=config)
         scored.append((_to_score(raw), h))
     scored.sort(key=lambda x: x[0], reverse=True)
     k = get_settings().rag_top_k
@@ -110,7 +110,7 @@ def grade_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     if not hits:
         return {"low_confidence": True, "grade_score": 0.0}
     snips = "\n".join(f"[#{h['chunk_id']}] {h['text']}" for h in hits)
-    score = _to_score(deps.chat.complete(_GRADE_PROMPT.format(q=_last_user_text(state), snips=snips)))
+    score = _to_score(deps.chat.complete(_GRADE_PROMPT.format(q=_last_user_text(state), snips=snips), config=config))
     threshold = get_settings().rag_confidence_threshold
     return {"low_confidence": score < threshold, "grade_score": score}
 
@@ -119,7 +119,7 @@ def correct_query_node(state: dict[str, Any], config: dict[str, Any]) -> dict[st
     """CRAG: weak retrieval -> rewrite the query for one corrective re-retrieval."""
     deps = config["configurable"]["deps"]
     q = _last_user_text(state)
-    rewrite = deps.chat.complete(_CORRECT_PROMPT.format(q=q))
+    rewrite = deps.chat.complete(_CORRECT_PROMPT.format(q=q), config=config)
     return {"retrieval_query": (rewrite.strip() if rewrite else q) or q, "corrected": True}
 
 
@@ -169,7 +169,7 @@ def generate_answer_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
     snips = "\n".join(
         f"[{i + 1}] ({h.get('doc_type') or 'document'}, {h.get('report_date') or 'undated'}) {h['text']}"
         for i, h in enumerate(hits))
-    body = deps.chat.complete(_ANSWER_PROMPT.format(q=_last_user_text(state), snips=snips))
+    body = deps.chat.complete(_ANSWER_PROMPT.format(q=_last_user_text(state), snips=snips), config=config)
     sources = _collapse_sources(hits)
     return {"answer": body, "citations": hits, "sources": sources,
             "messages": state["messages"] + [
