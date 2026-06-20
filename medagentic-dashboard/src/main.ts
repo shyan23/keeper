@@ -2,8 +2,9 @@ import './index.css';
 import { ApiDocument, ApiPatient, ApiRecord, CitationSource } from './types';
 import {
   apiUrl, createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
-  resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries, getActivity, getCost,
+  resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries, getActivity, getCost, getGraph,
 } from './api';
+import { renderGraph } from './graph';
 import { Chart, registerables } from 'chart.js';
 Chart.register(...registerables);
 import { groupDocsByYear } from './grouping';
@@ -44,7 +45,8 @@ let sortOrder: 'desc' | 'asc' = 'desc';
 let trendMetric: string | null = null;
 let trendChart: Chart | null = null;
 let mobileTab: 'dashboard' | 'knowledge' = 'dashboard';
-let panelTab: 'chat' | 'docs' | 'tracer' = 'chat';
+let panelTab: 'chat' | 'docs' | 'tracer' | 'graph' = 'chat';
+let _graphLoaded = false; // lazy-load flag
 let chats: ChatMsg[] = [];
 let stagedFileName = '';
 const expandedCards = new Set<string>();   // which document cards are expanded
@@ -119,9 +121,11 @@ async function selectPatient(id: string) {
   currentPatientId = id;
   filterType = 'all';
   trendMetric = null;
+  _graphLoaded = false;
   if (trendChart) { trendChart.destroy(); trendChart = null; }
   await loadPatientData();
   render();
+  if (panelTab === 'graph') loadGraphTab();
 }
 
 function renderSidebar() {
@@ -583,9 +587,11 @@ function renderChatbot() {
   const tabChat = $('panel-tab-chat');
   const tabDocs = $('panel-tab-docs');
   const tabTracer = $('panel-tab-tracer');
+  const tabGraph = $('panel-tab-graph');
   const viewChat = $('view-chat');
   const viewDocs = $('view-docs');
   const viewTracer = $('view-tracer');
+  const viewGraph = $('view-graph');
   if (!tabChat || !tabDocs || !viewChat || !viewDocs) return;
 
   const activeCls = 'flex-1 flex items-center justify-center gap-2 py-4 px-4 text-[11px] md:text-xs font-bold uppercase tracking-widest transition-all duration-200 border-b-[3px] border-[#5D7B6F] text-[#2E2C29] bg-white/70';
@@ -604,13 +610,41 @@ function renderChatbot() {
     tabTracer.className = panelTab === 'tracer' ? activeCls : idleCls;
     setHtml(tabTracer, `<i data-lucide="activity" class="w-3.5 h-3.5"></i> Activity`);
   }
+  if (tabGraph) {
+    tabGraph.className = panelTab === 'graph' ? activeCls : idleCls;
+    setHtml(tabGraph, `<i data-lucide="git-fork" class="w-3.5 h-3.5"></i> Graph`);
+  }
 
-  if (panelTab === 'chat') { showEl(viewChat); hideEl(viewDocs); hideEl(viewTracer); }
-  else if (panelTab === 'docs') { hideEl(viewChat); showEl(viewDocs); hideEl(viewTracer); }
-  else { hideEl(viewChat); hideEl(viewDocs); showEl(viewTracer); }
+  if (panelTab === 'chat') {
+    showEl(viewChat); hideEl(viewDocs); hideEl(viewTracer); hideEl(viewGraph);
+  } else if (panelTab === 'docs') {
+    hideEl(viewChat); showEl(viewDocs); hideEl(viewTracer); hideEl(viewGraph);
+  } else if (panelTab === 'tracer') {
+    hideEl(viewChat); hideEl(viewDocs); showEl(viewTracer); hideEl(viewGraph);
+  } else {
+    hideEl(viewChat); hideEl(viewDocs); hideEl(viewTracer); showEl(viewGraph);
+  }
 
   renderMessages();
   renderDocs();
+}
+
+// ---- Graph view ----
+
+async function loadGraphTab() {
+  if (!currentPatientId) return;
+  const container = $('graph-content');
+  if (!container) return;
+  setHtml(container, '<div class="flex justify-center pt-12 text-[#A6A298]"><i data-lucide="loader-2" class="w-6 h-6 animate-spin"></i></div>');
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  try {
+    const data = await getGraph(currentPatientId);
+    _graphLoaded = true;
+    renderGraph(container, data);
+  } catch (e: any) {
+    setHtml(container, '<div class="p-4 text-sm text-[#C16D54]">Could not load graph: ' + esc(e.message) + '</div>');
+  }
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 // ---- Activity / Tracer view ----
@@ -1397,6 +1431,7 @@ document.addEventListener('click', e => {
   if (id === 'panel-tab-chat') { panelTab = 'chat'; render(); }
   else if (id === 'panel-tab-docs') { panelTab = 'docs'; render(); }
   else if (id === 'panel-tab-tracer') { panelTab = 'tracer'; render(); loadTracer(); }
+  else if (id === 'panel-tab-graph') { panelTab = 'graph'; render(); if (!_graphLoaded) loadGraphTab(); }
   else if (id === 'sub-tab-activity') { _tracerSubTab = 'activity'; renderTracerFull(); }
   else if (id === 'sub-tab-cost') { _tracerSubTab = 'cost'; renderTracerFull(); }
   else if (id === 'tab-dashboard') { mobileTab = 'dashboard'; render(); }
