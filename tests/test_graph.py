@@ -220,10 +220,10 @@ def test_build_graph_temporal_edge(db):
         if e.get("temporal") is True
         and e["from"] == med_nid
         and e["to"] == tr_nid
-        and e["type"] == "ordered"
+        and e["type"] == "temporally_ordered"
     ]
     assert len(temporal_edges) == 1, (
-        f"Expected 1 temporal 'ordered' edge, got {len(temporal_edges)}. "
+        f"Expected 1 temporal 'temporally_ordered' edge, got {len(temporal_edges)}. "
         f"All edges: {result['edges']}"
     )
     edge = temporal_edges[0]

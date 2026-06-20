@@ -12,6 +12,7 @@ import re
 from collections import defaultdict
 from datetime import date
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -74,6 +75,10 @@ def _name_map(db: Session, patient_id: int) -> dict[tuple[str, int], str]:
     for tr, test_name in (
         db.query(TestResult, MedicalTest.name)
         .join(MedicalTest, MedicalTest.id == TestResult.medical_test_id)
+        .join(DocumentEntity, and_(DocumentEntity.entity_id == TestResult.id,
+                                   DocumentEntity.entity_type == "test_result"))
+        .join(Document, Document.id == DocumentEntity.document_id)
+        .filter(Document.patient_id == patient_id)
         .all()
     ):
         m[("test_result", tr.id)] = test_name
@@ -164,8 +169,6 @@ def build_graph(db: Session, patient_id: int) -> dict:
                 )
 
     # Annotate test nodes with latest value & status
-    _num_re = re.compile(r"-?\d*\.?\d+")
-    _ref_re = re.compile(r"(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)")
     by_test_name: dict[str, list[dict]] = defaultdict(list)
     for row in test_series:
         by_test_name[row["test"].strip().lower()].append(row)
@@ -181,17 +184,16 @@ def build_graph(db: Session, patient_id: int) -> dict:
         node["value"] = latest.get("value")
         node["unit"] = latest.get("unit")
         ref = latest.get("reference_range") or ""
-        m = _ref_re.search(ref)
+        m = _REF_RE.search(ref)
         status = "normal"
         if m and latest.get("value"):
-            vm = _num_re.match(latest["value"])
-            if vm:
-                v = float(vm.group(0))
+            v = _num(latest.get("value"))
+            if v is not None:
                 lo, hi = float(m.group(1)), float(m.group(2))
                 if v < lo or v > hi:
                     status = "warning"
                     # check if critical (>20% outside range)
-                    if lo and (v < lo * 0.8 or v > hi * 1.2):
+                    if lo is not None and (v < lo * 0.8 or v > hi * 1.2):
                         status = "critical"
         node["status"] = status
 
@@ -253,13 +255,13 @@ def _infer_temporal(
                     dst = f"test_result-{test['entity_id']}"
                     if src not in nodes or dst not in nodes:
                         continue
-                    key = (src, dst, "ordered")
+                    key = (src, dst, "temporally_ordered")
                     if key in seen_edges:
                         continue
                     seen_edges.add(key)
                     edges.append({
                         "from": src, "to": dst,
-                        "type": "ordered",
+                        "type": "temporally_ordered",
                         "confidence": round(confidence, 2),
                         "temporal": True,
                         "days_apart": delta,
