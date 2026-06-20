@@ -637,3 +637,20 @@ Specs and plans live under `.claude/specs/`, `.claude/plans/`, and
 `docs/superpowers/`. Start with
 `.claude/specs/2026-06-16-agentic-chatbot-design.md` for the agent design and
 `.claude/specs/2026-06-15-medical-doc-intelligence-design.md` for the foundation.
+
+## Tracing (optional, self-hosted Langfuse)
+
+Per-conversation traces (node latency + LLM model/tokens), fully local.
+
+1. `docker compose -f docker-compose.langfuse.yml up -d`
+2. Open http://localhost:3000, create an account + project.
+3. Copy the project's public/secret keys into `.env`:
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-...
+   LANGFUSE_SECRET_KEY=sk-...
+   LANGFUSE_HOST=http://localhost:3000
+   ```
+4. Restart the app. Traces appear per conversation (grouped by thread/session).
+
+Tracing is OFF when the keys are blank. **Keep `LANGFUSE_HOST` local — never
+`cloud.langfuse.com`; traces contain medical content.**
