@@ -1,4 +1,8 @@
-.PHONY: run ui dev eval eval-retrieval
+.PHONY: run ui dev eval eval-retrieval mcp
+
+# MCP server (stdio) — exposes records/search as tools for any MCP client.
+mcp:
+	python -m app.mcp.server
 
 # Backend API (single worker: in-process agent checkpointer; --reload picks up edits).
 run:

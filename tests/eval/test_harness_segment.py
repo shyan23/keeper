@@ -11,7 +11,7 @@ class _FakeChat:
     """structured() answers by target schema: _ReportSplit -> two reports (one per
     page); ExtractionResult -> that page's parsed fields."""
 
-    def structured(self, prompt: str, schema):
+    def structured(self, prompt: str, schema, config=None):
         if schema.__name__ == "_ReportSplit":
             return schema(reports=[
                 {"title": "CBC", "doc_type": "lab report", "pages": [0],
@@ -27,7 +27,7 @@ class _FakeChat:
         return schema(patient_name="John Akram", doc_date="2023-06-01",
                       tests=[{"name": "Cholesterol", "value": "180"}])
 
-    def complete(self, prompt: str) -> str:  # unused
+    def complete(self, prompt: str, config=None) -> str:  # unused
         return ""
 
 

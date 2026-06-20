@@ -62,7 +62,7 @@ def _shift_months(d: dt.date, n: int) -> dt.date:
 def resolve_timeframe(req: dict, today: dt.date) -> tuple[dt.date | None, dt.date | None]:
     """(date_from, date_to) inclusive, or (None, None) for all-time. Years win,
     then last_n_years, then last_n_months."""
-    years = req.get("years") or []
+    years = [y for y in (req.get("years") or []) if isinstance(y, int) and 1 <= y <= 9999]
     if years:
         return dt.date(min(years), 1, 1), dt.date(max(years), 12, 31)
     if req.get("last_n_years"):

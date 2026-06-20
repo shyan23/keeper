@@ -6,10 +6,10 @@ class _FakeChat:
     def __init__(self, decision: IntentDecision):
         self._decision = decision
 
-    def complete(self, prompt):
+    def complete(self, prompt, config=None):
         return ""
 
-    def structured(self, prompt, schema):
+    def structured(self, prompt, schema, config=None):
         return self._decision
 
 

@@ -1,0 +1,36 @@
+# Self-hosted Langfuse v2 (lightweight: web + its own Postgres). Local only.
+# Start:  docker compose -f docker-compose.langfuse.yml up -d
+# UI:     http://localhost:3000  (create a project, copy keys into .env)
+services:
+  langfuse-server:
+    image: langfuse/langfuse:2
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@langfuse-db:5432/postgres
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: change-me-langfuse-secret
+      SALT: change-me-langfuse-salt
+      TELEMETRY_ENABLED: "false"
+    restart: unless-stopped
+
+  langfuse-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - langfuse_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  langfuse_pgdata:

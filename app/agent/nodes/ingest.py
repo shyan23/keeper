@@ -89,14 +89,14 @@ def dedup_check_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str,
     return {"dedup": "new", "content_hash": chash}
 
 
-def _extract_one(deps, text: str) -> dict[str, Any]:
+def _extract_one(deps, text: str, config=None) -> dict[str, Any]:
     # Cache structured extraction by (model, text): re-ingest skips the slow LLM call.
     # v2: prompt now breaks narrative/imaging reports into labeled findings.
     key = make_key(f"extract:v2:{get_settings().ollama_model}", text)
     llm = get_or_set(
         key,
         lambda: deps.chat.structured(
-            _EXTRACT_PROMPT.format(text=text), ExtractionResult
+            _EXTRACT_PROMPT.format(text=text), ExtractionResult, config=config
         ).model_dump(),
     )
     # Hybrid: union high-precision OpenMed NER entities into the LLM extraction.
@@ -128,7 +128,7 @@ def segment_extract_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
     patient_name = None
     for seg in split_reports(deps.chat, pages):
         text = seg["text"]
-        ex = _extract_one(deps, text)
+        ex = _extract_one(deps, text, config=config)
         title = seg.get("title")
         # Prefer the report's own date: LLM split date, else LLM extraction
         # doc_date, else scraped from text.

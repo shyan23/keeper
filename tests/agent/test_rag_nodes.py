@@ -9,10 +9,10 @@ class _FakeChat:
     def __init__(self, text):
         self._text = text
 
-    def complete(self, prompt):
+    def complete(self, prompt, config=None):
         return self._text
 
-    def structured(self, prompt, schema):
+    def structured(self, prompt, schema, config=None):
         raise NotImplementedError
 
 
@@ -62,10 +62,10 @@ def test_generate_answer_refuses_when_empty():
 
 class _ScoreByContentChat:
     """complete() returns a high score when the snippet looks relevant, else low."""
-    def complete(self, prompt):
+    def complete(self, prompt, config=None):
         return "0.9" if "good" in prompt else "0.1"
 
-    def structured(self, prompt, schema):
+    def structured(self, prompt, schema, config=None):
         raise NotImplementedError
 
 

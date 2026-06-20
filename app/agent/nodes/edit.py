@@ -47,7 +47,7 @@ def plan_edit_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, A
         return _say(state, "Select a patient first, then tell me what to edit.",
                     edit_target=None)
     plan = deps.chat.structured(_EDIT_PROMPT.format(text=_last_user_text(state)),
-                                EditPlan).model_dump()
+                                EditPlan, config=config).model_dump()
     with deps.session_factory() as s:
         target = find_edit_target(s, int(pid), plan)
     if not target:

@@ -8,16 +8,16 @@ class _Schema(BaseModel):
 
 
 class _BoomChat:
-    def complete(self, prompt):
+    def complete(self, prompt, config=None):
         raise RuntimeError("provider down")
-    def structured(self, prompt, schema):
+    def structured(self, prompt, schema, config=None):
         raise RuntimeError("provider down")
 
 
 class _OkChat:
-    def complete(self, prompt):
+    def complete(self, prompt, config=None):
         return "ok-text"
-    def structured(self, prompt, schema):
+    def structured(self, prompt, schema, config=None):
         return schema(answer="ok-struct")
 
 

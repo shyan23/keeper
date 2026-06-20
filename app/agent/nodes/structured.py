@@ -82,7 +82,7 @@ def _last_user_text(state: dict[str, Any]) -> str:
 
 def parse_filters_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     deps = config["configurable"]["deps"]
-    f = deps.chat.structured(_PROMPT.format(text=_last_user_text(state)), _Filters)
+    f = deps.chat.structured(_PROMPT.format(text=_last_user_text(state)), _Filters, config=config)
     return {"query_filters": f.model_dump()}
 
 

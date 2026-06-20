@@ -5,10 +5,10 @@ from app.agent.nodes.ingest import _extract_one
 
 
 class _FakeChat:
-    def complete(self, prompt):
+    def complete(self, prompt, config=None):
         return ""
 
-    def structured(self, prompt, schema):
+    def structured(self, prompt, schema, config=None):
         return ExtractionResult(
             patient_name="John",
             diseases=[{"name": "Hypertension", "confidence": 0.8, "source_span": "HTN"}],

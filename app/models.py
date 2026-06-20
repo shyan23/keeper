@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, func, text as sa_text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import relationship as orm_relationship
 
@@ -111,3 +111,10 @@ class Chunk(Base):
     page_ref: Mapped[str | None] = mapped_column(String(40), nullable=True)
     section_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBED_DIM), nullable=True)
+
+
+# GIN index over the English full-text vector of chunk.text — powers the BM25/FTS
+# half of hybrid retrieval (see services/retrieval.py). Expression index, so no
+# extra column; created by create_all (tests) and migration 0007 (prod).
+Index("ix_chunk_text_fts", sa_text("to_tsvector('english', text)"),
+      postgresql_using="gin")

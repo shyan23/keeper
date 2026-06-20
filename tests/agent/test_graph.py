@@ -9,10 +9,10 @@ class _FakeChat:
     def __init__(self, label):
         self._label = label
 
-    def complete(self, prompt):
+    def complete(self, prompt, config=None):
         return self._label
 
-    def structured(self, prompt, schema):
+    def structured(self, prompt, schema, config=None):
         if schema is ExtractionResult:
             return ExtractionResult(
                 patient_name="Graph Pt", doc_type="prescription",
@@ -125,8 +125,8 @@ def test_graph_clarify_ends_turn():
     from app.agent.state import Deps, IntentDecision
 
     class _Chat:
-        def complete(self, p): return ""
-        def structured(self, p, s):
+        def complete(self, p, config=None): return ""
+        def structured(self, p, s, config=None):
             return IntentDecision(intent="rag_query", confidence=0.2,
                                   question="What would you like?")
 
@@ -143,8 +143,8 @@ def test_graph_mid_confidence_interrupts_confirm_intent():
     from app.agent.state import Deps, IntentDecision
 
     class _Chat:
-        def complete(self, p): return ""
-        def structured(self, p, s):
+        def complete(self, p, config=None): return ""
+        def structured(self, p, s, config=None):
             return IntentDecision(intent="structured_query", confidence=0.85)
 
     deps = Deps(chat=_Chat(), vision=None, embedder=None, session_factory=None)

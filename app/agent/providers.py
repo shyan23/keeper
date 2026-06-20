@@ -25,11 +25,11 @@ class GeminiChat:
                                            google_api_key=s.gemini_api_key, temperature=0)
         self._inner = inner
 
-    def complete(self, prompt: str) -> str:
-        return self._inner.invoke(prompt).content
+    def complete(self, prompt: str, config: dict | None = None) -> str:
+        return self._inner.invoke(prompt, config=config).content
 
-    def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
-        return self._inner.with_structured_output(schema).invoke(prompt)
+    def structured(self, prompt: str, schema: type[BaseModel], config: dict | None = None) -> BaseModel:
+        return self._inner.with_structured_output(schema).invoke(prompt, config=config)
 
 
 class GeminiVision:
@@ -75,11 +75,11 @@ class OllamaChat:
             inner = ChatOllama(model=s.ollama_model, base_url=s.ollama_host, temperature=0)
         self._inner = inner
 
-    def complete(self, prompt: str) -> str:
-        return self._inner.invoke(prompt).content
+    def complete(self, prompt: str, config: dict | None = None) -> str:
+        return self._inner.invoke(prompt, config=config).content
 
-    def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
-        return self._inner.with_structured_output(schema).invoke(prompt)
+    def structured(self, prompt: str, schema: type[BaseModel], config: dict | None = None) -> BaseModel:
+        return self._inner.with_structured_output(schema).invoke(prompt, config=config)
 
 
 class TesseractVision:
@@ -179,6 +179,40 @@ class OllamaVision:
         return self._inner.invoke(msg).content
 
 
+class MedGemmaVision:
+    """Imaging/radiology OCR + narrative via MedGemma 4B (Ollama-served, local).
+
+    Fills the README's "no vision-model escalation" gap for X-ray/USG/CT scans,
+    which Tesseract can't read. Off by default (config.medgemma_enabled): the
+    Gemma/HAI-DEF license is field-restricted (not OSI), and a 4B model is slow,
+    so Tesseract stays the default OSS path. In the chain it sits behind Tesseract
+    as the escalation for images Tesseract handles poorly.
+
+    ponytail: routes by being a fallback, not by doc_type (ocr_image only gets
+    bytes+mime). Upgrade path: pass doc_type down to pick MedGemma for imaging up
+    front instead of after a weak Tesseract pass.
+    """
+
+    def __init__(self, inner=None):
+        if inner is None:
+            s = get_settings()
+            inner = ChatOllama(model=s.medgemma_model, base_url=s.ollama_host, temperature=0)
+        self._inner = inner
+
+    def ocr_image(self, data: bytes, mime: str) -> str:
+        b64 = base64.b64encode(data).decode()
+        msg = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "You are reading a medical imaging study. "
+                 "Transcribe all printed text verbatim, then describe the radiological "
+                 "findings shown. Output text only."},
+                {"type": "image_url", "image_url": f"data:{mime};base64,{b64}"},
+            ],
+        }]
+        return self._inner.invoke(msg).content
+
+
 # ---- Fallback wrappers ----
 
 class FallbackChat:
@@ -187,21 +221,21 @@ class FallbackChat:
     def __init__(self, providers: list):
         self._providers = [p for p in providers if p is not None]
 
-    def complete(self, prompt: str) -> str:
+    def complete(self, prompt: str, config: dict | None = None) -> str:
         last = None
         for p in self._providers:
             try:
-                return p.complete(prompt)
+                return p.complete(prompt, config=config)
             except Exception as e:  # noqa: BLE001 - fallback is the whole point
                 log.warning("chat provider %s failed: %s", type(p).__name__, e)
                 last = e
         raise RuntimeError(f"all chat providers failed: {last}")
 
-    def structured(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
+    def structured(self, prompt: str, schema: type[BaseModel], config: dict | None = None) -> BaseModel:
         last = None
         for p in self._providers:
             try:
-                return p.structured(prompt, schema)
+                return p.structured(prompt, schema, config=config)
             except Exception as e:  # noqa: BLE001
                 log.warning("chat(structured) provider %s failed: %s", type(p).__name__, e)
                 last = e
@@ -300,6 +334,10 @@ def build_deps(session_factory: Any):
     # paid Gemini vision model (only when Gemini is configured).
     gemini_vision = GeminiVision() if _has_gemini() else None
     visions = [PrescriptionVision(TesseractVision(), gemini_vision)]
+    # MedGemma joins as the imaging escalation behind Tesseract (config-gated;
+    # license/speed caveats — see MedGemmaVision).
+    if s.medgemma_enabled:
+        visions.append(MedGemmaVision())
 
     # Embeddings are pinned to a single provider (Ollama nomic-embed-text, 768-dim):
     # mixing embedding providers corrupts the shared pgvector space, and current
