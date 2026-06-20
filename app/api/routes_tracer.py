@@ -159,3 +159,85 @@ def _fmt_time(ts: str) -> str:
         return dt.strftime("%-I:%M %p")
     except Exception:
         return ""
+
+
+# ---- Cost per 1M tokens (USD). Groq/Ollama = free. ----
+# Gemini 2.5 Flash: $0.075 input / $0.30 output per 1M tokens.
+_COST_PER_M: dict[str, dict[str, float]] = {
+    "gemini-2.5-flash":        {"input": 0.075,  "output": 0.30},
+    "gemini-2.0-flash":        {"input": 0.075,  "output": 0.30},
+    "gemini-1.5-flash":        {"input": 0.075,  "output": 0.30},
+}
+_FREE_PREFIXES = ("llama", "qwen", "mixtral", "openai/gpt-oss", "moondream",
+                  "nomic", "llava", "mistral", "deepseek")
+
+
+def _model_cost_usd(model: str, input_tok: int, output_tok: int) -> float:
+    name = (model or "").lower()
+    for prefix in _FREE_PREFIXES:
+        if prefix in name:
+            return 0.0
+    rates = _COST_PER_M.get(name)
+    if rates is None:
+        # Unknown model — fall back to Gemini Flash rates as a conservative estimate
+        rates = {"input": 0.075, "output": 0.30}
+    return (input_tok * rates["input"] + output_tok * rates["output"]) / 1_000_000
+
+
+def _provider_label(model: str) -> str:
+    name = (model or "").lower()
+    if "gemini" in name:
+        return "Gemini (paid)"
+    if any(p in name for p in ("llama", "qwen", "mixtral", "openai/gpt-oss", "deepseek")):
+        return "Groq (free)"
+    if any(p in name for p in ("moondream", "llava", "nomic", "ollama")):
+        return "Ollama (local)"
+    return model or "Unknown"
+
+
+@router.get("/cost")
+def get_cost(limit: int = 100):
+    if not tracing_enabled():
+        return {"enabled": False, "models": [], "total_usd": "0.0000"}
+
+    try:
+        resp = httpx.get(
+            _langfuse_url(f"/api/public/observations?type=GENERATION&limit={limit}"),
+            headers={"Authorization": _auth_header()},
+            timeout=_TIMEOUT,
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("data", [])
+    except Exception as exc:
+        log.warning("Langfuse cost fetch failed: %s", exc)
+        return {"enabled": True, "error": "Could not reach Langfuse.", "models": [], "total_usd": "0.0000"}
+
+    # Aggregate per model
+    agg: dict[str, dict] = {}
+    for obs in raw:
+        model = obs.get("model") or "unknown"
+        usage = obs.get("usage") or {}
+        inp = int(usage.get("input") or usage.get("promptTokens") or 0)
+        out = int(usage.get("output") or usage.get("completionTokens") or 0)
+        cost = _model_cost_usd(model, inp, out)
+        if model not in agg:
+            agg[model] = {"model": model, "label": _provider_label(model),
+                          "calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+        agg[model]["calls"] += 1
+        agg[model]["input_tokens"] += inp
+        agg[model]["output_tokens"] += out
+        agg[model]["cost_usd"] += cost
+
+    models = sorted(agg.values(), key=lambda x: x["cost_usd"], reverse=True)
+    total = sum(m["cost_usd"] for m in models)
+
+    for m in models:
+        m["cost_usd"] = f"{m['cost_usd']:.4f}"
+        m["input_tokens"] = _fmt_tokens(m["input_tokens"])
+        m["output_tokens"] = _fmt_tokens(m["output_tokens"])
+
+    return {
+        "enabled": True,
+        "models": models,
+        "total_usd": f"{total:.4f}",
+    }

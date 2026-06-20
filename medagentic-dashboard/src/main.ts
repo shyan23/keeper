@@ -2,7 +2,7 @@ import './index.css';
 import { ApiDocument, ApiPatient, ApiRecord, CitationSource } from './types';
 import {
   apiUrl, createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
-  resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries, getActivity,
+  resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries, getActivity, getCost,
 } from './api';
 import { Chart, registerables } from 'chart.js';
 Chart.register(...registerables);
@@ -584,7 +584,9 @@ function renderChatbot() {
 // ---- Activity / Tracer view ----
 
 let _tracerData: any = null;
+let _costData: any = null;
 let _tracerLoading = false;
+let _tracerSubTab: 'activity' | 'cost' = 'activity';
 
 async function loadTracer() {
   if (_tracerLoading) return;
@@ -593,14 +595,27 @@ async function loadTracer() {
     `<div class="flex justify-center pt-12 text-[#A6A298]"><i data-lucide="loader-2" class="w-6 h-6 animate-spin"></i></div>`);
   if (typeof lucide !== 'undefined') lucide.createIcons();
   try {
-    _tracerData = await getActivity();
-  } catch {
-    _tracerData = { enabled: true, error: 'Could not reach backend.', conversations: [], stats: {} };
+    [_tracerData, _costData] = await Promise.all([
+      getActivity().catch(() => ({ enabled: true, error: 'Could not reach backend.', conversations: [], stats: {} })),
+      getCost().catch(() => ({ enabled: true, error: 'Could not reach backend.', models: [], total_usd: '0.0000' })),
+    ]);
   } finally {
     _tracerLoading = false;
-    setHtml($('tracer-content'), buildTracerHtml(_tracerData));
+    renderTracerFull();
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
+}
+
+function renderTracerFull() {
+  const subTabOn = 'flex-1 py-2 text-[11px] font-bold rounded-lg bg-white shadow-sm text-[#2E2C29] transition-all';
+  const subTabOff = 'flex-1 py-2 text-[11px] font-bold rounded-lg text-[#8C8982] transition-all hover:text-[#2E2C29]';
+  const nav = `<div class="flex bg-[#F0EFEB] rounded-xl p-1 mb-4 shrink-0">
+    <button id="sub-tab-activity" class="${_tracerSubTab === 'activity' ? subTabOn : subTabOff}">Activity</button>
+    <button id="sub-tab-cost" class="${_tracerSubTab === 'cost' ? subTabOn : subTabOff}">API Cost</button>
+  </div>`;
+  const body = _tracerSubTab === 'activity' ? buildTracerHtml(_tracerData) : buildCostHtml(_costData);
+  setHtml($('tracer-content'), nav + body);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function speedBadgeHtml(speed: string): string {
@@ -720,6 +735,60 @@ function stepperHtml(active: number): string {
   }).join('')}</div>`;
 }
 
+function buildCostHtml(d: any): string {
+  if (!d || !d.enabled) {
+    return `<div class="flex flex-col items-center justify-center text-center pt-8 gap-3 px-6">
+      <i data-lucide="eye-off" class="w-7 h-7 text-[#D5D2C9]"></i>
+      <p class="text-sm text-[#A6A298]">Enable tracing to see API costs.</p>
+    </div>`;
+  }
+  if (d.error) {
+    return `<div class="p-4 bg-[#FEF3EE] border border-[#F5C7B0] rounded-xl text-sm text-[#7A3B2E] flex gap-2 items-start">
+      <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 mt-0.5 text-[#C16D54]"></i>
+      <span>${esc(d.error)}</span>
+    </div>`;
+  }
+  const models: any[] = d.models || [];
+  const totalUsd: string = d.total_usd || '0.0000';
+  const totalNum = parseFloat(totalUsd);
+
+  const totalCard = `<div class="bg-white/70 border border-[#EBEBE6] rounded-2xl p-4">
+    <p class="text-[10px] font-bold text-[#8C8982] uppercase tracking-widest">Total Estimated Cost</p>
+    <p class="text-3xl font-bold text-[#2E2C29] mt-1">$${esc(totalUsd)}</p>
+    <p class="text-[11px] text-[#A6A298] mt-1">Based on last 200 LLM calls · Groq &amp; Ollama are free</p>
+  </div>`;
+
+  if (!models.length) {
+    return totalCard + `<div class="flex flex-col items-center text-center pt-6 gap-2">
+      <i data-lucide="zap" class="w-7 h-7 text-[#D5D2C9]"></i>
+      <p class="text-sm text-[#A6A298]">No LLM calls recorded yet.</p>
+    </div>`;
+  }
+
+  const maxCost = Math.max(...models.map(m => parseFloat(m.cost_usd) || 0), 0.0001);
+
+  const rows = models.map(m => {
+    const cost = parseFloat(m.cost_usd) || 0;
+    const pct = Math.round((cost / maxCost) * 100);
+    const isFree = cost === 0;
+    const barColor = isFree ? 'bg-[#DCF0E8]' : cost > totalNum * 0.5 ? 'bg-[#F5C7B0]' : 'bg-[#B8D4CC]';
+    return `<div class="bg-white/70 border border-[#EBEBE6] rounded-xl p-3">
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <p class="text-[12px] font-semibold text-[#2E2C29]">${esc(m.label)}</p>
+          <p class="text-[10px] text-[#A6A298] mt-0.5">${esc(m.calls)} calls · ${esc(m.input_tokens || '0')} in · ${esc(m.output_tokens || '0')} out tokens</p>
+        </div>
+        <span class="text-sm font-bold shrink-0 ${isFree ? 'text-[#2E7D50]' : 'text-[#C16D54]'}">${isFree ? 'Free' : '$' + esc(m.cost_usd)}</span>
+      </div>
+      <div class="h-1.5 bg-[#F0EFEB] rounded-full overflow-hidden">
+        <div class="h-full ${barColor} rounded-full transition-all" style="width:${pct}%"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return totalCard + `<div class="space-y-2">${rows}</div>`;
+}
+
 function chatEmptyHtml(): string {
   return `
     <div class="h-full flex flex-col items-center justify-center text-center px-8 select-none">
@@ -831,6 +900,27 @@ function interruptCardHtml(payload: any, idx: number) {
           </div>
         </div>`;
     };
+    const candidates: any[] = payload.candidates || [];
+    const candidateSection = candidates.length > 0 ? `
+      <div class="mb-4 bg-amber-50 border border-amber-200 rounded-2xl p-3">
+        <div class="flex items-center gap-1.5 mb-2">
+          <i data-lucide="users" class="w-3.5 h-3.5 text-amber-600"></i>
+          <span class="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Possible match — same person?</span>
+        </div>
+        <input type="hidden" id="int-pid-${idx}" value="" />
+        <div class="space-y-1.5">
+          ${candidates.map((c: any) => `
+            <button type="button" data-pid="${esc(c.id)}" data-pidtgt="int-pid-${idx}"
+              class="pid-pick-btn w-full text-left px-3 py-2 rounded-xl border border-amber-200 bg-white hover:bg-amber-100 transition-colors flex items-center justify-between group">
+              <span class="text-[12px] font-semibold text-[#2E2C29]">${esc(c.name)}</span>
+              <span class="text-[10px] text-amber-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Use this →</span>
+            </button>`).join('')}
+          <button type="button" data-pid="" data-pidtgt="int-pid-${idx}"
+            class="pid-pick-btn w-full text-left px-3 py-2 rounded-xl border border-dashed border-amber-300 bg-white/50 hover:bg-white transition-colors">
+            <span class="text-[11px] text-[#8C8982]">No — create as new patient</span>
+          </button>
+        </div>
+      </div>` : '';
     return `
       <div class="bg-gradient-to-br from-[#F5F4F0] to-[#E9E8E1] rounded-3xl p-5 md:p-6 shadow-lg border border-[#DEDCD6]">
         <div class="flex items-center gap-2 mb-3 text-[#C16D54]">
@@ -841,6 +931,7 @@ function interruptCardHtml(payload: any, idx: number) {
         <p class="text-[11px] text-[#8C8982] mb-4">${segs.length > 1
           ? segs.length + ' reports detected — each saves as its own card. Expand to verify.'
           : 'Review the extracted fields before saving.'}</p>
+        ${candidateSection}
         <div class="flex gap-2 items-center mb-4">
           <span class="text-[10px] font-bold text-[#8C8982] uppercase tracking-wider w-16 shrink-0">Patient</span>
           ${inp(`int-name-${idx}`, patientName, 'patient name', 'flex-1')}
@@ -1008,9 +1099,12 @@ function bindInterruptButtons() {
       if (payload.type === 'confirm_ingest') {
         if (t.dataset.act === 'confirm') {
           const c = collectSegments(idx, payload);
+          const pidInput = ($(`int-pid-${idx}`) as HTMLInputElement | null);
+          const chosenPid = pidInput?.value ? parseInt(pidInput.value, 10) : null;
           resume = { approved: true, segments: c.segments,
             extracted: c.segments[0]?.extracted,
-            ...(payload.patient_id ? { patient_id: payload.patient_id } : {}),
+            ...(chosenPid ? { patient_id: chosenPid }
+              : payload.patient_id ? { patient_id: payload.patient_id } : {}),
             ...(c.patient_name ? { name: c.patient_name } : {}) };
         } else {
           resume = { approved: false };
@@ -1182,10 +1276,29 @@ function sendText(text: string) {
 
 // ---- global listeners (delegated; markup is re-rendered) ----
 document.addEventListener('click', e => {
-  const id = (e.target as HTMLElement).closest('button')?.id;
+  const btn = (e.target as HTMLElement).closest('button');
+  const id = btn?.id;
+  // Patient candidate picker inside confirm_ingest card
+  if (btn?.classList.contains('pid-pick-btn')) {
+    const tgt = btn.dataset.pidtgt;
+    const pid = btn.dataset.pid ?? '';
+    if (tgt) {
+      const inp = document.getElementById(tgt) as HTMLInputElement | null;
+      if (inp) inp.value = pid;
+    }
+    // Visual: highlight selected, clear others in same group
+    const card = btn.closest('.bg-gradient-to-br');
+    card?.querySelectorAll('.pid-pick-btn').forEach(b => {
+      b.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-50');
+    });
+    btn.classList.add('ring-2', 'ring-amber-400', 'bg-amber-50');
+    return;
+  }
   if (id === 'panel-tab-chat') { panelTab = 'chat'; render(); }
   else if (id === 'panel-tab-docs') { panelTab = 'docs'; render(); }
   else if (id === 'panel-tab-tracer') { panelTab = 'tracer'; render(); loadTracer(); }
+  else if (id === 'sub-tab-activity') { _tracerSubTab = 'activity'; renderTracerFull(); }
+  else if (id === 'sub-tab-cost') { _tracerSubTab = 'cost'; renderTracerFull(); }
   else if (id === 'tab-dashboard') { mobileTab = 'dashboard'; render(); }
   else if (id === 'tab-knowledge') { mobileTab = 'knowledge'; render(); }
 });

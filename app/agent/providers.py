@@ -40,7 +40,7 @@ class GeminiVision:
                                            google_api_key=s.gemini_api_key, temperature=0)
         self._inner = inner
 
-    def ocr_image(self, data: bytes, mime: str) -> str:
+    def ocr_image(self, data: bytes, mime: str, config=None) -> str:
         import base64
         b64 = base64.b64encode(data).decode()
         msg = [{
@@ -50,7 +50,7 @@ class GeminiVision:
                 {"type": "image_url", "image_url": f"data:{mime};base64,{b64}"},
             ],
         }]
-        return self._inner.invoke(msg).content
+        return self._inner.invoke(msg, config=config).content
 
 
 class GeminiEmbedder:
@@ -97,7 +97,7 @@ class TesseractVision:
     # confidence clears this; otherwise return the best variant tried.
     BENCHMARK = 70.0
 
-    def ocr_image(self, data: bytes, mime: str) -> str:
+    def ocr_image(self, data: bytes, mime: str, config=None) -> str:
         return self.ocr_with_confidence(data, mime)[0]
 
     def ocr_with_confidence(self, data: bytes, mime: str) -> tuple[str, float]:
@@ -167,7 +167,7 @@ class OllamaVision:
             inner = ChatOllama(model=s.ollama_vision_model, base_url=s.ollama_host, temperature=0)
         self._inner = inner
 
-    def ocr_image(self, data: bytes, mime: str) -> str:
+    def ocr_image(self, data: bytes, mime: str, config=None) -> str:
         b64 = base64.b64encode(data).decode()
         msg = [{
             "role": "user",
@@ -176,7 +176,7 @@ class OllamaVision:
                 {"type": "image_url", "image_url": f"data:{mime};base64,{b64}"},
             ],
         }]
-        return self._inner.invoke(msg).content
+        return self._inner.invoke(msg, config=config).content
 
 
 class MedGemmaVision:
@@ -199,7 +199,7 @@ class MedGemmaVision:
             inner = ChatOllama(model=s.medgemma_model, base_url=s.ollama_host, temperature=0)
         self._inner = inner
 
-    def ocr_image(self, data: bytes, mime: str) -> str:
+    def ocr_image(self, data: bytes, mime: str, config=None) -> str:
         b64 = base64.b64encode(data).decode()
         msg = [{
             "role": "user",
@@ -210,7 +210,7 @@ class MedGemmaVision:
                 {"type": "image_url", "image_url": f"data:{mime};base64,{b64}"},
             ],
         }]
-        return self._inner.invoke(msg).content
+        return self._inner.invoke(msg, config=config).content
 
 
 # ---- Fallback wrappers ----
@@ -246,11 +246,11 @@ class FallbackVision:
     def __init__(self, providers: list):
         self._providers = [p for p in providers if p is not None]
 
-    def ocr_image(self, data: bytes, mime: str) -> str:
+    def ocr_image(self, data: bytes, mime: str, config=None) -> str:
         last = None
         for p in self._providers:
             try:
-                return p.ocr_image(data, mime)
+                return p.ocr_image(data, mime, config=config)
             except Exception as e:  # noqa: BLE001
                 log.warning("vision provider %s failed: %s", type(p).__name__, e)
                 last = e
@@ -275,14 +275,14 @@ class PrescriptionVision:
         # fine; make per-call if this ever serves concurrent ingests.
         self.gemini_failed = False
 
-    def ocr_image(self, data: bytes, mime: str) -> str:
+    def ocr_image(self, data: bytes, mime: str, config=None) -> str:
         from app.services.handwriting import looks_like_handwriting
         text, conf = self._tess.ocr_with_confidence(data, mime)
         if self._gemini is not None and looks_like_handwriting(text, conf):
             log.info("handwriting detected (conf=%.1f, len=%d) -> Gemini OCR",
                      conf, len(text))
             try:
-                return self._gemini.ocr_image(data, mime)
+                return self._gemini.ocr_image(data, mime, config=config)
             except Exception as e:  # noqa: BLE001 - paid path is best-effort
                 self.gemini_failed = True
                 log.warning("Gemini prescription OCR failed, keeping Tesseract: %s", e)

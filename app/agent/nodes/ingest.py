@@ -56,10 +56,11 @@ def extract_text_node(state: dict[str, Any], config: dict[str, Any]) -> dict[str
     deps = cfg["deps"]
     data = Path(state["file_path"]).read_bytes()
     text = extract_text(data, mime_type=state["mime_type"], vision=deps.vision,
-                        progress=cfg.get("progress"))
+                        progress=cfg.get("progress"), config=config)
     # Per-page text (from the OCR cache, no re-OCR) so a multi-report scan can be
     # split into separate documents.
-    pages = extract_pages(data, mime_type=state["mime_type"], vision=deps.vision)
+    pages = extract_pages(data, mime_type=state["mime_type"], vision=deps.vision,
+                          config=config)
     return {"ocr_text": text, "pages": pages,
             "content_hash": hashlib.sha256(data).hexdigest()}
 
@@ -156,8 +157,8 @@ def segment_extract_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
 
 # Honorifics / titles that should NOT distinguish two patients.
 _TITLE_TOKENS = {
-    "mr", "mrs", "ms", "miss", "mst", "master", "md", "dr", "prof", "professor",
-    "mister", "sir", "madam", "smt", "mr.", "mrs.", "dr.",
+    "mr", "mrs", "ms", "miss", "mst", "mds", "master", "md", "dr", "prof", "professor",
+    "mister", "sir", "madam", "smt", "begum", "mr.", "mrs.", "dr.", "mst.", "mds.",
 }
 
 
@@ -185,7 +186,7 @@ def resolve_patient_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
                  if _normalize_name(p.name) == nnorm]
         fuzzy = [{"id": p.id, "name": p.name} for p in all_p
                  if _normalize_name(p.name) != nnorm
-                 and SequenceMatcher(None, nnorm, _normalize_name(p.name)).ratio() >= 0.85]
+                 and SequenceMatcher(None, nnorm, _normalize_name(p.name)).ratio() >= 0.80]
     if len(exact) == 1:
         return {"patient_id": exact[0]["id"], "patient_candidates": []}
     # 0 matches -> brand new; 2+ normalized matches -> ambiguous, let the human pick.

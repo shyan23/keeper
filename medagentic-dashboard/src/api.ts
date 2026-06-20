@@ -98,6 +98,7 @@ export async function streamChat(body: {
 }
 
 export const getActivity = () => json<any>('/api/tracer/activity');
+export const getCost = () => json<any>('/api/tracer/cost');
 
 export async function resumeChat(body: { thread_id: string; resume: any },
                                  handlers: SseHandlers): Promise<void> {

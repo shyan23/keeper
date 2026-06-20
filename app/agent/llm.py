@@ -82,7 +82,7 @@ class GroqVision:
             inner = ChatGroq(model=s.groq_vision_model, api_key=s.groq_api_key, temperature=0)
         self._inner = inner
 
-    def ocr_image(self, data: bytes, mime: str) -> str:
+    def ocr_image(self, data: bytes, mime: str, config=None) -> str:
         b64 = base64.b64encode(data).decode()
         msg = [{
             "role": "user",
@@ -91,4 +91,4 @@ class GroqVision:
                 {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
             ],
         }]
-        return self._inner.invoke(msg).content
+        return self._inner.invoke(msg, config=config).content
