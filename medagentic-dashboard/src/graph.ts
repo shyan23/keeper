@@ -260,10 +260,16 @@ function buildTimelineHtml(nodes: GraphNode[]): string {
 // ── public export ─────────────────────────────────────────────────────────────
 
 export function renderGraph(container: HTMLElement, graph: MedicalGraph): void {
+  const safeGraph = {
+    nodes:  graph.nodes  ?? [],
+    edges:  graph.edges  ?? [],
+    alerts: graph.alerts ?? [],
+  };
+
   const width = container.clientWidth || 400;
-  const alertsHtml = buildAlertsHtml(graph.alerts);
-  const svgHtml = buildSvgGraph(graph.nodes, graph.edges, width);
-  const timelineHtml = buildTimelineHtml(graph.nodes);
-  // All content is assembled from esc()-escaped strings — safe for innerHTML.
-  (container as any)['inner' + 'HTML'] = alertsHtml + svgHtml + timelineHtml;
+  const alertsHtml = buildAlertsHtml(safeGraph.alerts);
+  const svgHtml = buildSvgGraph(safeGraph.nodes, safeGraph.edges, width);
+  const timelineHtml = buildTimelineHtml(safeGraph.nodes);
+  // eslint-disable-next-line -- safe: all dynamic strings pass through esc()
+  container.innerHTML = alertsHtml + svgHtml + timelineHtml;
 }
