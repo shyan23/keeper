@@ -58,7 +58,7 @@ class GroqChat:
             rf = {"type": "json_schema",
                   "json_schema": {"name": schema.__name__, "strict": True,
                                   "schema": to_strict_schema(
-                                      schema, drop={"source_span", "confidence"})}}
+                                      schema, drop={"source_span"})}}
             raw = client.bind(response_format=rf).invoke(prompt, config=config).content
             return schema.model_validate_json(raw)
 

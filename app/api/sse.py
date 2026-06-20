@@ -76,7 +76,7 @@ def run_graph_sse(graph, payload: Any, thread_id: str,
                     }))
         except Exception as e:  # noqa: BLE001 - surface to the client as an error event
             log.exception("[sse %s] graph error after %.2fs", thread_id, time.monotonic() - t0)
-            q.put(("error", {"message": str(e)}))
+            q.put(("error", {"message": "Something went wrong. Please try again."}))
         finally:
             log.info("[sse %s] stream end (total %.2fs)", thread_id, time.monotonic() - t0)
             q.put((_DONE, None))

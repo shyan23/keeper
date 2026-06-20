@@ -91,7 +91,7 @@ def test_sse_error_event():
 
     body = _collect(sse.run_graph_sse(Boom([]), {"messages": []}, "t3", deps={}))
     assert "event: error" in body
-    assert "provider down" in body
+    assert "Something went wrong" in body
     assert "event: done" in body
 
 
