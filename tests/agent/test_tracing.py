@@ -1,4 +1,9 @@
-from app.config import Settings
+from app.agent import tracing
+from app.agent.llm import GroqChat
+from app.agent.nodes.rag import generate_answer_node
+from app.agent.providers import FallbackChat
+from app.api import runtime
+from app.config import Settings, get_settings
 
 
 def test_langfuse_settings_default_off(monkeypatch):
@@ -9,10 +14,6 @@ def test_langfuse_settings_default_off(monkeypatch):
     assert s.langfuse_public_key is None
     assert s.langfuse_secret_key is None
     assert s.langfuse_host == "http://localhost:3000"
-
-
-from app.agent import tracing
-from app.config import get_settings
 
 
 def test_tracing_disabled_when_keys_missing(monkeypatch):
@@ -33,9 +34,6 @@ def test_tracing_enabled_when_both_keys_set(monkeypatch):
     assert handler is not None
 
 
-from app.api import runtime
-
-
 def test_cfg_omits_callbacks_when_disabled(monkeypatch):
     monkeypatch.setattr(runtime, "get_handler", lambda session_id=None: None)
     c = runtime.cfg("thread-1", deps=object())
@@ -47,10 +45,6 @@ def test_cfg_attaches_callbacks_when_enabled(monkeypatch):
     monkeypatch.setattr(runtime, "get_handler", lambda session_id=None: sentinel)
     c = runtime.cfg("thread-1", deps=object())
     assert c["callbacks"] == [sentinel]
-
-
-from app.agent.llm import GroqChat
-from app.agent.providers import FallbackChat
 
 
 class _RecordingInner:
@@ -86,9 +80,6 @@ def test_fallbackchat_complete_forwards_config():
     chat = FallbackChat([p])
     chat.complete("hi", config={"callbacks": ["h"]})
     assert p.seen_config == {"callbacks": ["h"]}
-
-
-from app.agent.nodes.rag import generate_answer_node
 
 
 class _RecordingChat:
