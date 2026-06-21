@@ -15,7 +15,7 @@ import app.models  # noqa: F401  (register tables on Base.metadata)
 
 config = context.config
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.test_database_url or settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 if config.config_file_name:
     fileConfig(config.config_file_name)
 

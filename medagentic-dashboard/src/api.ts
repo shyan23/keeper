@@ -2,7 +2,8 @@ import {
   ApiDocument, ApiPatient, ApiRecord, Health, SseHandlers, TrendMetric, TrendSeries, MedicalGraph,
 } from './types';
 
-const API = (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
+// ponytail: empty string = same-origin; Vite proxies /api → localhost:8000 in dev
+const API = (import.meta as any).env?.VITE_API_BASE ?? '';
 
 // Absolute URL to stream a document's original file (citations / docs table "Open").
 export const docFileUrl = (id: string | number) => `${API}/api/documents/${id}/file`;
