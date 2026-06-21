@@ -25,3 +25,4 @@ langfuse>=2.0,<3
 # langfuse v2's CallbackHandler imports the umbrella `langchain` package
 # (langchain.callbacks.base, langchain.schema.agent) — not just langchain-core.
 langchain==0.3.14
+kuzu>=0.6

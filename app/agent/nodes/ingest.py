@@ -335,9 +335,38 @@ def persist_reports_node(state: dict[str, Any], config: dict[str, Any]) -> dict[
         except OSError:
             pass
 
+    # Update Kuzu + Redis graph caches non-blocking so ingest response isn't delayed.
+    _update_graph_caches(pid, deps)
+
     if len(titles) > 1:
         msg = (f"Split into {len(titles)} reports — {', '.join(titles)}. "
                f"Saved {total_entities} entities, indexed {total_chunks} chunks.")
     else:
         msg = f"Saved {total_entities} entities, indexed {total_chunks} chunks. Ingestion complete."
     return {"messages": state["messages"] + [{"role": "assistant", "content": msg}]}
+
+
+def _update_graph_caches(patient_id: int, deps: Any) -> None:
+    """Rebuild Kuzu + Redis graph cache in a daemon thread after document ingest."""
+    import threading
+
+    def _run() -> None:
+        try:
+            from app.services import graph as gsvc
+            from app.services import kuzu_graph as kgraph
+            from app import cache
+            import json
+            with deps.session_factory() as db:
+                graph = gsvc.build_graph(db, patient_id)
+            kgraph.ingest(patient_id, graph)
+            r = cache._client()
+            if r:
+                key = f"keeper:graph:{patient_id}"
+                r.set(key, json.dumps(graph, default=str), ex=3600)
+                # Invalidate cached subgraphs for this patient so stale data isn't served.
+                for stale in r.scan_iter(f"keeper:subgraph:{patient_id}:*"):
+                    r.delete(stale)
+        except Exception as e:
+            log.warning("graph cache update failed (patient %s): %s", patient_id, e)
+
+    threading.Thread(target=_run, daemon=True).start()

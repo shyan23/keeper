@@ -16,6 +16,7 @@ INTENT_ENTRY = {
     "rag_query": "require_patient",
     "edit": "plan_edit",
     "generate_pdf": "plan_report",
+    "graph_query": "graph_query",
 }
 
 _INTENT_SUMMARY = {
@@ -24,6 +25,7 @@ _INTENT_SUMMARY = {
     "rag_query": "answer a question from the document contents",
     "edit": "change an extracted value",
     "generate_pdf": "build a PDF report",
+    "graph_query": "show health relationships or subgraph visualization",
 }
 
 _PROMPT = """You are routing a medical-records assistant. Classify the user's
@@ -35,6 +37,7 @@ Intents:
 - structured_query: ask for a specific document/record by patient, type, or recency.
 - rag_query: a question about the CONTENT of documents.
 - ingest: read/store a newly provided document.
+- graph_query: SHOW RELATIONSHIP/GRAPH/SUBGRAPH/TREND/CONNECTION between medical entities (diseases, medications, tests). Examples: "show me relationship between diabetes and my meds", "what's connected to hypertension", "show subgraph for insulin".
 
 Return JSON: {{"intent": <one of the above>, "confidence": <0..1>, "question": <a
 short clarifying question if and only if you are unsure, else null>}}.

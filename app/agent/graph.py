@@ -18,6 +18,7 @@ from app.agent.nodes.rag import (
 from app.agent.nodes.report import (
     build_report_node, confirm_report_node, deliver_report_node, plan_report_node,
 )
+from app.agent.nodes.graph_query import graph_query_node
 
 
 def _route(state: AgentState) -> str:
@@ -71,6 +72,7 @@ def build_graph(checkpointer=None):
     g.add_node("correct_query", correct_query_node)
     g.add_node("confirm_low_confidence", confirm_low_confidence_node)
     g.add_node("generate_answer", generate_answer_node)
+    g.add_node("graph_query", graph_query_node)
 
     g.add_edge(START, "router")
     g.add_conditional_edges("router", _route, {
@@ -131,5 +133,7 @@ def build_graph(checkpointer=None):
     g.add_edge("correct_query", "retrieve")
     g.add_edge("confirm_low_confidence", "generate_answer")
     g.add_edge("generate_answer", END)
+
+    g.add_edge("graph_query", END)
 
     return g.compile(checkpointer=checkpointer or MemorySaver())

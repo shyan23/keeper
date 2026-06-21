@@ -1,275 +1,287 @@
-import { MedicalGraph, GraphNode, GraphEdge, GraphAlert } from './types';
+import cytoscape from 'cytoscape';
+import { MedicalGraph, GraphNode } from './types';
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 function esc(v: unknown): string {
-  return String(v ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function truncate(s: string, max = 12): string {
-  return s.length > max ? s.slice(0, max - 1) + '…' : s;
-}
-
-function nodeColor(node: GraphNode): string {
-  if (node.type === 'disease') return '#698A7D';
-  if (node.type === 'medication') return '#8A7D98';
-  if (node.status === 'critical') return '#F44336';
-  if (node.status === 'warning') return '#FF9800';
-  return '#4CAF50';
+function nodeStyle(type: string, status: string) {
+  if (type === 'disease')    return { bg: '#5D7B6F', border: '#3D5B4F' };
+  if (type === 'medication') return { bg: '#7B6F8A', border: '#5B4F6A' };
+  if (status === 'critical') return { bg: '#E53935', border: '#B71C1C' };
+  if (status === 'warning')  return { bg: '#FB8C00', border: '#E65100' };
+  return { bg: '#43A047', border: '#2E7D32' };
 }
 
 function edgeColor(confidence: number): string {
-  if (confidence >= 0.80) return '#5D7B6F';
-  if (confidence >= 0.60) return '#A0B4AD';
+  if (confidence >= 0.8) return '#5D7B6F';
+  if (confidence >= 0.6) return '#A0B4AD';
   return '#D0DAD7';
 }
 
-function edgeOpacity(confidence: number): number {
-  if (confidence >= 0.80) return 0.9;
-  if (confidence >= 0.60) return 0.7;
-  return 0.5;
-}
-
-function formatMonthYear(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleDateString([], { month: 'short', year: 'numeric' });
-  } catch {
-    return dateStr;
-  }
-}
-
-// ── force-directed layout ─────────────────────────────────────────────────────
-
-interface SimNode {
-  id: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-}
-
-function runForceLayout(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  width: number,
-  height: number,
-): SimNode[] {
-  const PAD = 30;
-  const KR = 8000;
-  const KS = 0.08;
-  const REST = 120;
-  const KG = 0.01;
-  const DAMP = 0.85;
-  const ITER = 80;
-
-  const cx = width / 2;
-  const cy = height / 2;
-
-  const sims: SimNode[] = nodes.map(() => ({
-    id: '',
-    x: PAD + Math.random() * (width - PAD * 2),
-    y: PAD + Math.random() * (height - PAD * 2),
-    vx: 0,
-    vy: 0,
-  }));
-  nodes.forEach((n, i) => { sims[i].id = n.id; });
-
-  const idx = new Map(sims.map((s, i) => [s.id, i]));
-
-  for (let iter = 0; iter < ITER; iter++) {
-    const fx = new Array(sims.length).fill(0);
-    const fy = new Array(sims.length).fill(0);
-
-    for (let a = 0; a < sims.length; a++) {
-      for (let b = a + 1; b < sims.length; b++) {
-        const dx = sims[a].x - sims[b].x;
-        const dy = sims[a].y - sims[b].y;
-        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-        const f = KR / (dist * dist);
-        const ux = dx / dist;
-        const uy = dy / dist;
-        fx[a] += f * ux;
-        fy[a] += f * uy;
-        fx[b] -= f * ux;
-        fy[b] -= f * uy;
-      }
-    }
-
-    for (const edge of edges) {
-      const ai = idx.get(edge.from);
-      const bi = idx.get(edge.to);
-      if (ai === undefined || bi === undefined) continue;
-      const dx = sims[bi].x - sims[ai].x;
-      const dy = sims[bi].y - sims[ai].y;
-      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-      const f = KS * (dist - REST);
-      const ux = dx / dist;
-      const uy = dy / dist;
-      fx[ai] += f * ux;
-      fy[ai] += f * uy;
-      fx[bi] -= f * ux;
-      fy[bi] -= f * uy;
-    }
-
-    for (let i = 0; i < sims.length; i++) {
-      fx[i] += KG * (cx - sims[i].x);
-      fy[i] += KG * (cy - sims[i].y);
-    }
-
-    for (let i = 0; i < sims.length; i++) {
-      sims[i].vx = (sims[i].vx + fx[i]) * DAMP;
-      sims[i].vy = (sims[i].vy + fy[i]) * DAMP;
-      sims[i].x += sims[i].vx;
-      sims[i].y += sims[i].vy;
-      sims[i].x = Math.min(width - PAD, Math.max(PAD, sims[i].x));
-      sims[i].y = Math.min(height - PAD, Math.max(PAD, sims[i].y));
-    }
-  }
-
-  return sims;
-}
-
-// ── render alert banners ──────────────────────────────────────────────────────
-
-function buildAlertsHtml(alerts: GraphAlert[]): string {
-  if (!alerts.length) return '';
-  const items = alerts.map(alert => {
-    const isCritical = alert.severity === 'critical';
-    const bg = isCritical ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200';
-    const textCls = isCritical ? 'text-red-700' : 'text-yellow-700';
-    const iconCls = isCritical ? 'text-red-500' : 'text-yellow-500';
-    return (
-      '<div class="flex items-start gap-2 p-3 rounded-lg ' + bg + ' border text-sm">' +
-      '<span class="' + iconCls + ' font-bold">⚠</span>' +
-      '<span class="' + textCls + '">' + esc(alert.message) + '</span>' +
-      '</div>'
-    );
-  }).join('');
-  return '<div class="space-y-2 mb-4">' + items + '</div>';
-}
-
-// ── render SVG graph ──────────────────────────────────────────────────────────
-
-function buildSvgGraph(nodes: GraphNode[], edges: GraphEdge[], width: number): string {
-  const height = 340;
-  const R = 22;
-
-  if (nodes.length === 0) {
-    const hw = (width / 2).toFixed(1);
-    const hh1 = (height / 2 - 10).toFixed(1);
-    const hh2 = (height / 2 + 10).toFixed(1);
-    return (
-      '<svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '"' +
-      ' xmlns="http://www.w3.org/2000/svg" class="rounded-xl border border-[#E0DDD5] bg-[#FAFAF8] w-full">' +
-      '<text x="' + hw + '" y="' + hh1 + '" text-anchor="middle"' +
-      ' font-size="13" fill="#A6A298" font-family="sans-serif">' +
-      'No medical relationships found yet.' +
-      '</text>' +
-      '<text x="' + hw + '" y="' + hh2 + '" text-anchor="middle"' +
-      ' font-size="12" fill="#C0BCB4" font-family="sans-serif">' +
-      'Upload more documents to build your health graph.' +
-      '</text>' +
-      '</svg>'
-    );
-  }
-
-  const positions = runForceLayout(nodes, edges, width, height);
-  const posMap = new Map(positions.map(p => [p.id, p]));
-
-  const edgeSvg = edges.map(edge => {
-    const a = posMap.get(edge.from);
-    const b = posMap.get(edge.to);
-    if (!a || !b) return '';
-    const mx = ((a.x + b.x) / 2).toFixed(1);
-    const my = ((a.y + b.y) / 2).toFixed(1);
-    const color = edgeColor(edge.confidence);
-    const opacity = edgeOpacity(edge.confidence).toFixed(1);
-    const label = '(' + edge.confidence.toFixed(2) + ')';
-    return (
-      '<line x1="' + a.x.toFixed(1) + '" y1="' + a.y.toFixed(1) + '"' +
-      ' x2="' + b.x.toFixed(1) + '" y2="' + b.y.toFixed(1) + '"' +
-      ' stroke="' + color + '" stroke-opacity="' + opacity + '" stroke-width="1.5" />' +
-      '<text x="' + mx + '" y="' + my + '" text-anchor="middle"' +
-      ' font-size="9" fill="' + color + '" fill-opacity="' + opacity + '"' +
-      ' font-family="sans-serif">' + esc(label) + '</text>'
-    );
-  }).join('');
-
-  const nodeSvg = nodes.map(node => {
-    const pos = posMap.get(node.id);
-    if (!pos) return '';
-    const color = nodeColor(node);
-    const labelText = truncate(node.label);
-    const labelY = (pos.y + R + 13).toFixed(1);
-    const valueText = node.type === 'test' && node.value
-      ? truncate((node.value + (node.unit ? ' ' + node.unit : '')), 12)
-      : null;
-    const valueY = (pos.y + R + 24).toFixed(1);
-    return (
-      '<circle cx="' + pos.x.toFixed(1) + '" cy="' + pos.y.toFixed(1) + '" r="' + R + '"' +
-      ' fill="' + color + '" fill-opacity="0.85" stroke="white" stroke-width="2" />' +
-      '<text x="' + pos.x.toFixed(1) + '" y="' + labelY + '" text-anchor="middle"' +
-      ' font-size="11" fill="#2E2C29" font-family="sans-serif" font-weight="500">' +
-      esc(labelText) + '</text>' +
-      (valueText
-        ? '<text x="' + pos.x.toFixed(1) + '" y="' + valueY + '" text-anchor="middle"' +
-          ' font-size="9" fill="#8C8982" font-family="sans-serif">' + esc(valueText) + '</text>'
-        : '')
-    );
-  }).join('');
-
-  return (
-    '<svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '"' +
-    ' xmlns="http://www.w3.org/2000/svg"' +
-    ' class="rounded-xl border border-[#E0DDD5] bg-[#FAFAF8] w-full" style="display:block">' +
-    edgeSvg +
-    nodeSvg +
-    '</svg>'
-  );
-}
-
-// ── render timeline strip ─────────────────────────────────────────────────────
-
-function buildTimelineHtml(nodes: GraphNode[]): string {
-  const dated = nodes
-    .filter(n => n.date)
-    .slice()
-    .sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
-
-  if (!dated.length) return '';
-
-  const chips = dated.map(n =>
-    '<div class="shrink-0 flex flex-col items-center gap-1">' +
-    '<div class="w-2 h-2 rounded-full bg-[#5D7B6F]"></div>' +
-    '<div class="text-[10px] text-[#8C8982]">' + esc(formatMonthYear(n.date!)) + '</div>' +
-    '<div class="text-[10px] font-medium text-[#2E2C29] max-w-[60px] text-center truncate"' +
-    ' title="' + esc(n.label) + '">' + esc(n.label) + '</div>' +
-    '</div>'
-  ).join('');
-
-  return (
-    '<div class="mt-4">' +
-    '<div class="text-xs font-bold text-[#8C8982] uppercase tracking-wider mb-2">Timeline</div>' +
-    '<div class="flex gap-3 overflow-x-auto pb-2 hide-scrollbar">' + chips + '</div>' +
-    '</div>'
-  );
-}
-
-// ── public export ─────────────────────────────────────────────────────────────
+// ── public API ────────────────────────────────────────────────────────────────
 
 export function renderGraph(container: HTMLElement, graph: MedicalGraph): void {
-  const safeGraph = {
-    nodes:  graph.nodes  ?? [],
-    edges:  graph.edges  ?? [],
-    alerts: graph.alerts ?? [],
-  };
+  // Destroy any previous Cytoscape instance bound to this container.
+  (container as any)._cy?.destroy();
+  // Remove previous child nodes (re-render).
+  while (container.firstChild) container.removeChild(container.firstChild);
 
-  const width = container.clientWidth || 400;
-  const alertsHtml = buildAlertsHtml(safeGraph.alerts);
-  const svgHtml = buildSvgGraph(safeGraph.nodes, safeGraph.edges, width);
-  const timelineHtml = buildTimelineHtml(safeGraph.nodes);
-  // eslint-disable-next-line -- safe: all dynamic strings pass through esc()
-  container.innerHTML = alertsHtml + svgHtml + timelineHtml;
+  const nodes  = graph.nodes  ?? [];
+  const edges  = graph.edges  ?? [];
+  const alerts = graph.alerts ?? [];
+
+  _renderAlerts(container, alerts);
+
+  const graphDiv = document.createElement('div');
+  graphDiv.style.cssText = 'width:100%;height:400px;border-radius:12px;overflow:hidden;background:#FAFAF8;border:1px solid #E0DDD5;';
+  container.appendChild(graphDiv);
+
+  if (!nodes.length) {
+    graphDiv.style.cssText += 'display:flex;align-items:center;justify-content:center;';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'text-align:center;color:#A6A298;font-size:13px;line-height:1.8;font-family:ui-sans-serif,system-ui,sans-serif';
+    const line1 = document.createElement('div');
+    line1.textContent = 'No medical relationships found yet.';
+    const line2 = document.createElement('div');
+    line2.style.cssText = 'font-size:11px;color:#C0BCB4';
+    line2.textContent = 'Upload more documents to build your health graph.';
+    msg.appendChild(line1);
+    msg.appendChild(line2);
+    graphDiv.appendChild(msg);
+    return;
+  }
+
+  const elements = [
+    ...nodes.map(n => {
+      const s = nodeStyle(n.type, n.status ?? 'normal');
+      return {
+        data: {
+          id: n.id,
+          label: n.label,
+          type: n.type,
+          value: n.value ?? null,
+          unit: n.unit ?? null,
+          status: n.status ?? 'normal',
+          bg: s.bg,
+          border: s.border,
+        },
+      };
+    }),
+    ...edges.map((e, i) => ({
+      data: {
+        id: `e${i}`,
+        source: e.from,
+        target: e.to,
+        label: e.type.replace(/_/g, ' '),
+        confidence: e.confidence,
+        color: edgeColor(e.confidence),
+      },
+    })),
+  ];
+
+  const cy = cytoscape({
+    container: graphDiv,
+    elements,
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'background-color': 'data(bg)',
+          'border-color': 'data(border)',
+          'border-width': 2,
+          'label': 'data(label)',
+          'color': '#ffffff',
+          'font-size': 11,
+          'font-weight': 'bold',
+          'font-family': 'ui-sans-serif, system-ui, sans-serif',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '72px',
+          'width': 68,
+          'height': 68,
+          'text-outline-color': 'data(bg)',
+          'text-outline-width': 1,
+          'transition-property': 'border-width, width, height',
+          'transition-duration': 150,
+        } as any,
+      },
+      {
+        selector: 'node:selected',
+        style: { 'border-width': 4, 'width': 76, 'height': 76 } as any,
+      },
+      {
+        selector: 'node[type="test"]',
+        style: { 'shape': 'round-rectangle' } as any,
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 1.5,
+          'line-color': 'data(color)',
+          'target-arrow-color': 'data(color)',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'label': 'data(label)',
+          'font-size': 9,
+          'color': '#8C8982',
+          'font-family': 'ui-sans-serif, system-ui, sans-serif',
+          'text-rotation': 'autorotate',
+          'text-background-color': '#FAFAF8',
+          'text-background-opacity': 0.9,
+          'text-background-padding': '2px',
+          'text-background-shape': 'round-rectangle',
+          'opacity': 0.85,
+        } as any,
+      },
+      {
+        selector: 'edge:selected',
+        style: { 'width': 3, 'opacity': 1 } as any,
+      },
+    ],
+    layout: {
+      name: 'cose',
+      animate: true,
+      animationDuration: 500,
+      padding: 30,
+      nodeOverlap: 20,
+      fit: true,
+      randomize: false,
+      componentSpacing: 100,
+      nodeRepulsion: () => 4500,
+      edgeElasticity: () => 100,
+      gravity: 80,
+      numIter: 1000,
+      initialTemp: 200,
+      coolingFactor: 0.95,
+      minTemp: 1.0,
+    } as any,
+    minZoom: 0.3,
+    maxZoom: 3,
+    wheelSensitivity: 0.3,
+  });
+
+  // Tooltip — built with safe DOM methods, no innerHTML for dynamic content.
+  const tooltip = document.createElement('div');
+  tooltip.style.cssText =
+    'position:absolute;background:rgba(20,20,20,0.9);color:#fff;font-size:11px;padding:7px 11px;' +
+    'border-radius:8px;pointer-events:none;display:none;z-index:999;max-width:200px;line-height:1.5;' +
+    'font-family:ui-sans-serif,system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+  container.style.position = 'relative';
+  container.appendChild(tooltip);
+
+  cy.on('mouseover', 'node', e => {
+    const d = e.target.data();
+    // Safe DOM construction — no innerHTML for user-derived strings.
+    while (tooltip.firstChild) tooltip.removeChild(tooltip.firstChild);
+
+    const name = document.createElement('strong');
+    name.textContent = d.label;
+    tooltip.appendChild(name);
+
+    const typeEl = document.createElement('span');
+    typeEl.style.cssText = 'display:block;opacity:.65;margin-top:1px';
+    typeEl.textContent = d.type;
+    tooltip.appendChild(typeEl);
+
+    if (d.value) {
+      const valEl = document.createElement('span');
+      valEl.style.cssText = 'display:block;margin-top:2px';
+      valEl.textContent = d.value + (d.unit ? ' ' + d.unit : '');
+      tooltip.appendChild(valEl);
+    }
+    if (d.status && d.status !== 'normal') {
+      const stEl = document.createElement('span');
+      stEl.style.cssText = 'display:block;color:#FFA726;margin-top:2px;font-weight:bold;text-transform:capitalize';
+      stEl.textContent = d.status;
+      tooltip.appendChild(stEl);
+    }
+    tooltip.style.display = 'block';
+  });
+  cy.on('mouseout', 'node', () => { tooltip.style.display = 'none'; });
+  cy.on('mousemove', (e: any) => {
+    const pos = e.originalEvent as MouseEvent;
+    const rect = container.getBoundingClientRect();
+    tooltip.style.left = (pos.clientX - rect.left + 14) + 'px';
+    tooltip.style.top  = (pos.clientY - rect.top  - 10) + 'px';
+  });
+
+  (container as any)._cy = cy;
+  _renderTimeline(container, nodes);
+}
+
+// ── alerts banner ─────────────────────────────────────────────────────────────
+
+function _renderAlerts(container: HTMLElement, alerts: MedicalGraph['alerts']): void {
+  if (!alerts.length) return;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:12px';
+  for (const a of alerts) {
+    const crit = a.severity === 'critical';
+    const row = document.createElement('div');
+    row.style.cssText =
+      `display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:10px;` +
+      `border:1px solid ${crit ? '#FFCDD2' : '#FFE0B2'};` +
+      `background:${crit ? '#FFF5F5' : '#FFF8F0'};font-size:12px;margin-bottom:6px;` +
+      `font-family:ui-sans-serif,system-ui,sans-serif`;
+    const icon = document.createElement('span');
+    icon.style.cssText = `color:${crit ? '#E53935' : '#FB8C00'};font-weight:bold;flex-shrink:0`;
+    icon.textContent = '⚠';
+    const text = document.createElement('span');
+    text.style.cssText = `color:${crit ? '#C62828' : '#E65100'}`;
+    text.textContent = a.message;   // textContent: safe
+    row.appendChild(icon);
+    row.appendChild(text);
+    wrap.appendChild(row);
+  }
+  container.appendChild(wrap);
+}
+
+// ── timeline strip ────────────────────────────────────────────────────────────
+
+function _renderTimeline(container: HTMLElement, nodes: GraphNode[]): void {
+  const dated = nodes
+    .filter(n => n.date)
+    .sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
+  if (!dated.length) return;
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-top:12px';
+
+  const heading = document.createElement('div');
+  heading.style.cssText = 'font-size:10px;font-weight:700;color:#8C8982;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-family:ui-sans-serif,system-ui,sans-serif';
+  heading.textContent = 'Timeline';
+  wrap.appendChild(heading);
+
+  const strip = document.createElement('div');
+  strip.style.cssText = 'display:flex;gap:12px;overflow-x:auto;padding-bottom:6px';
+
+  for (const n of dated) {
+    const d = new Date(n.date!).toLocaleDateString([], { month: 'short', year: 'numeric' });
+    const chip = document.createElement('div');
+    chip.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0';
+
+    const dot = document.createElement('div');
+    dot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#5D7B6F';
+
+    const dateEl = document.createElement('div');
+    dateEl.style.cssText = 'font-size:9px;color:#8C8982;font-family:ui-sans-serif,system-ui,sans-serif';
+    dateEl.textContent = d;
+
+    const labelEl = document.createElement('div');
+    labelEl.style.cssText = 'font-size:9px;font-weight:600;color:#2E2C29;max-width:60px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-sans-serif,system-ui,sans-serif';
+    labelEl.title = n.label;
+    labelEl.textContent = n.label;
+
+    chip.appendChild(dot);
+    chip.appendChild(dateEl);
+    chip.appendChild(labelEl);
+    strip.appendChild(chip);
+  }
+
+  wrap.appendChild(strip);
+  container.appendChild(wrap);
 }

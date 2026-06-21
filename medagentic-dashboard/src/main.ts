@@ -1,5 +1,5 @@
 import './index.css';
-import { ApiDocument, ApiPatient, ApiRecord, CitationSource } from './types';
+import { ApiDocument, ApiPatient, ApiRecord, CitationSource, MedicalGraph } from './types';
 import {
   apiUrl, createPatient, deleteRecords, docFileUrl, getDocuments, getHealth, getRecords, listPatients,
   resumeChat, streamChat, uploadFile, getTrendMetrics, getTrendSeries, getActivity, getCost, getGraph,
@@ -30,6 +30,7 @@ interface ChatMsg {
   text: string;
   timestamp: string;
   sources?: CitationSource[];
+  subgraph?: MedicalGraph;  // health subgraph returned by graph_query intent
   live?: boolean;       // agent bubble still streaming
   interrupt?: any;      // HITL payload -> render a card instead of a bubble
   stepper?: boolean;    // render the ingestion stepper instead of text
@@ -885,6 +886,7 @@ function renderMessages() {
             : msg.live
               ? `<span class="inline-flex items-center gap-2 text-[#8C8982]">${spinnerHtml('w-3.5 h-3.5 text-[#5D7B6F]')}<span>${esc(msg.text && msg.text !== '…' ? msg.text : 'Thinking…')}</span></span>`
               : esc(msg.text)}
+          ${msg.subgraph && !msg.live ? `<div id="chat-sg-${i}" class="mt-3 w-full overflow-hidden rounded-xl border border-[#E0DDD5]" style="min-height:180px"></div>` : ''}
           ${msg.sources && msg.sources.length ? `
             <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[#EBEBE6]/60">
               ${msg.sources.map(s => `
@@ -902,6 +904,13 @@ function renderMessages() {
   }).join(''));
   el.scrollTop = el.scrollHeight;
   bindInterruptButtons();
+  // Mount subgraphs into placeholder divs (must run after innerHTML is set).
+  chats.forEach((msg, i) => {
+    if (msg.subgraph && !msg.live) {
+      const container = document.getElementById(`chat-sg-${i}`);
+      if (container) renderGraph(container, msg.subgraph);
+    }
+  });
 }
 
 function interruptCardHtml(payload: any, idx: number) {
@@ -1348,8 +1357,9 @@ function streamHandlers(agent: ChatMsg) {
       chats.push({ sender: 'agent', text: '', timestamp: nowIso(), interrupt: payload });
       render();
     },
-    onMessage: (m: { content: string; sources?: CitationSource[] }) => {
+    onMessage: (m: { content: string; sources?: CitationSource[]; subgraph?: MedicalGraph }) => {
       agent.text = m.content; agent.live = false; agent.stepper = false; agent.sources = m.sources;
+      if (m.subgraph?.nodes?.length) agent.subgraph = m.subgraph;
       renderMessages();
     },
     onError: (message: string) => {

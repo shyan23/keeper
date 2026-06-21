@@ -115,7 +115,7 @@ export interface SseHandlers {
   onNode?: (label: string) => void;
   onProgress?: (msg: string) => void;
   onInterrupt?: (payload: any) => void;
-  onMessage?: (msg: { role: string; content: string; sources?: CitationSource[] }) => void;
+  onMessage?: (msg: { role: string; content: string; sources?: CitationSource[]; subgraph?: MedicalGraph }) => void;
   onError?: (message: string) => void;
   onDone?: (meta?: { patient_id?: number; document_id?: number }) => void;
 }

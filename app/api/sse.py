@@ -73,6 +73,7 @@ def run_graph_sse(graph, payload: Any, thread_id: str,
                         "role": last.get("role", "assistant"),
                         "content": last.get("content", ""),
                         "sources": last.get("sources"),
+                        "subgraph": last.get("subgraph"),
                     }))
         except Exception as e:  # noqa: BLE001 - surface to the client as an error event
             log.exception("[sse %s] graph error after %.2fs", thread_id, time.monotonic() - t0)

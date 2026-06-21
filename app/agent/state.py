@@ -84,7 +84,7 @@ class ExtractionResult(BaseModel):
 
 
 class IntentDecision(BaseModel):
-    intent: Literal["ingest", "structured_query", "rag_query", "edit", "generate_pdf"]
+    intent: Literal["ingest", "structured_query", "rag_query", "edit", "generate_pdf", "graph_query"]
     confidence: float = 0.5          # 0..1, LLM self-rated
     question: str | None = None      # clarifying question, set when ambiguous
 
@@ -158,3 +158,4 @@ class AgentState(TypedDict, total=False):
     low_confidence: bool
     grade_score: float
     route_gate: str | None    # "go" | "confirm" | "clarify"
+    graph_result: dict[str, Any] | None  # subgraph {nodes, edges, alerts} from graph_query
